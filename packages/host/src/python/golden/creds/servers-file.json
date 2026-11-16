@@ -1,0 +1,1302 @@
+{
+  "source": "@guuey/worker listCredentials (oss/packages/worker/src/creds.ts)",
+  "cases": [
+    {
+      "name": "two valid entries, keyed by the entry's name",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"myMcp\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\"Linear Tools\",\"credential\":{\"url\":\"https://b.example/mcp\",\"transport\":\"sse\",\"headers\":{},\"expiresAt\":\"2026-01-01T00:00:00.000Z\"}}]}"
+        }
+      },
+      "session": {
+        "kind": "absent"
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "myMcp",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": "Linear Tools",
+          "cred": {
+            "url": "https://b.example/mcp",
+            "transport": "sse",
+            "headers": {},
+            "expiresAt": "2026-01-01T00:00:00.000Z"
+          }
+        }
+      ]
+    },
+    {
+      "name": "the planted session folder is never read while the variable is set",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"ggui\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "ggui",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty value is no servers, the planted folder included",
+      "serversFile": {
+        "kind": "empty"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a missing file is no servers, never the session folder",
+      "serversFile": {
+        "kind": "missing"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a relative path naming a planted file is no servers",
+      "serversFile": {
+        "kind": "relative-to-session-file",
+        "content": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"planted\",\"credential\":{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a bare file name is no servers",
+      "serversFile": {
+        "kind": "literal",
+        "value": "mcp-servers.json"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a dot-relative path is no servers",
+      "serversFile": {
+        "kind": "literal",
+        "value": "./mcp-servers.json"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a path that is a directory is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "directory"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a path with a trailing slash is no servers",
+      "serversFile": {
+        "kind": "file-trailing-slash",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"ggui\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a symlink to a valid file is followed",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "symlink",
+          "target": {
+            "kind": "text",
+            "text": "{\"version\":1,\"servers\":[{\"name\":\"ggui\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]}"
+          }
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "ggui",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a dangling symlink is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "dangling-symlink"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "an empty file is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": ""
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a whitespace-only file is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": " \n\t\r "
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "not JSON is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{ not json"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "JSON null is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "null"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a top-level array is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "[{\"name\":\"a\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a top-level string is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "\"servers\""
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "servers missing is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "servers as an object is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":{\"a\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "servers null is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":null}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "an empty servers list is no servers",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "malformed and repeated entries are skipped, unknown keys kept verbatim, version not checked",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":2,\"later\":\"field\",\"servers\":[{\"name\":\"good\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"},\"later\":true},\"extra\":1},{\"name\":\"good\",\"credential\":{\"url\":\"https://second.example\",\"transport\":\"http\",\"headers\":{}}},{\"name\":\"\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":7,\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":null,\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\"no-credential\"},{\"name\":\"credential-null\",\"credential\":null},{\"name\":\"credential-array\",\"credential\":[{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}]},{\"name\":\"credential-string\",\"credential\":\"https://a.example\"},{\"name\":\"no-url\",\"credential\":{\"transport\":\"http\",\"headers\":{}}},{\"name\":\"url-number\",\"credential\":{\"url\":7,\"transport\":\"http\",\"headers\":{}}},{\"name\":\"url-null\",\"credential\":{\"url\":null,\"transport\":\"http\",\"headers\":{}}},{\"name\":\"bad-transport\",\"credential\":{\"url\":\"https://c.example\",\"transport\":\"grpc\",\"headers\":{}}},{\"name\":\"upper-transport\",\"credential\":{\"url\":\"https://c.example\",\"transport\":\"HTTP\",\"headers\":{}}},{\"name\":\"no-transport\",\"credential\":{\"url\":\"https://c.example\",\"headers\":{}}},[\"not\",\"an\",\"entry\"],null,\"string-entry\",42]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "good",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            },
+            "later": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "only url and transport are checked: headers and expiresAt pass through as written",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"no-headers\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\"}},{\"name\":\"headers-number\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"sse\",\"headers\":5}},{\"name\":\"headers-array\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":[\"x\"]}},{\"name\":\"header-values-mixed\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{\"a\":\"b\",\"n\":1,\"z\":null}}},{\"name\":\"expires-number\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{},\"expiresAt\":12}},{\"name\":\"empty-url\",\"credential\":{\"url\":\"\",\"transport\":\"http\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "no-headers",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http"
+          }
+        },
+        {
+          "name": "headers-number",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "sse",
+            "headers": 5
+          }
+        },
+        {
+          "name": "headers-array",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": [
+              "x"
+            ]
+          }
+        },
+        {
+          "name": "header-values-mixed",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {
+              "a": "b",
+              "n": 1,
+              "z": null
+            }
+          }
+        },
+        {
+          "name": "expires-number",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {},
+            "expiresAt": 12
+          }
+        },
+        {
+          "name": "empty-url",
+          "cred": {
+            "url": "",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "names a file name could not carry are kept as written",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"../escape\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\"with space\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\"slash/name\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\"ünïcødé ✓\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\".json\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}},{\"name\":\" \",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "../escape",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": "with space",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": "slash/name",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": "ünïcødé ✓",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": ".json",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        },
+        {
+          "name": " ",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "repeated top-level keys: the last one wins",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[],\"servers\":[{\"name\":\"last\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "last",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "repeated keys inside a credential: the last one wins",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"grpc\",\"headers\":{},\"transport\":\"sse\"}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "sse",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a lone surrogate escape in a name is kept",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\\ud800b\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a\ud800b",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "escaped characters decode",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"t\\u00e9st\\n\\\"q\\\"\",\"credential\":{\"url\":\"https:\\/\\/a.example\",\"transport\":\"\\u0068ttp\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "tést\n\"q\"",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a byte-order mark is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "﻿{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "NaN is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{},\"n\":NaN}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "Infinity is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{},\"n\":Infinity}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "-Infinity is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{},\"n\":-Infinity}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a trailing comma is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}},]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "single quotes are not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{'servers':[]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "trailing content is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[]} x"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a leading form feed is not JSON whitespace",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "\f{\"servers\":[]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a leading no-break space is not JSON whitespace",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": " {\"servers\":[]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a raw control character in a string is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\u0001\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "a leading-zero number is not JSON",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":01,\"servers\":[]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": []
+    },
+    {
+      "name": "JSON whitespace around the document is fine",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": " \r\n\t{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{}}}]} \r\n\t"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "numbers in unknown keys pass through",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"servers\":[{\"name\":\"a\",\"credential\":{\"url\":\"https://a.example\",\"transport\":\"http\",\"headers\":{},\"f\":1.5,\"e\":2e3,\"neg\":-7,\"z\":0}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {},
+            "f": 1.5,
+            "e": 2000,
+            "neg": -7,
+            "z": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "an invalid UTF-8 byte reads as U+FFFD",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "bytes",
+          "base64": "eyJzZXJ2ZXJzIjpbeyJuYW1lIjoiYf9iIiwiY3JlZGVudGlhbCI6eyJ1cmwiOiJodHRwczovL2EuZXhhbXBsZSIsInRyYW5zcG9ydCI6Imh0dHAiLCJoZWFkZXJzIjp7fX19XX0="
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a�b",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an encoded surrogate in a name",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "bytes",
+          "base64": "eyJzZXJ2ZXJzIjpbeyJuYW1lIjoiYe2ggGIiLCJjcmVkZW50aWFsIjp7InVybCI6Imh0dHBzOi8vYS5leGFtcGxlIiwidHJhbnNwb3J0IjoiaHR0cCIsImhlYWRlcnMiOnt9fX1dfQ=="
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a���b",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an overlong encoding in a name",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "bytes",
+          "base64": "eyJzZXJ2ZXJzIjpbeyJuYW1lIjoiYcCvYiIsImNyZWRlbnRpYWwiOnsidXJsIjoiaHR0cHM6Ly9hLmV4YW1wbGUiLCJ0cmFuc3BvcnQiOiJodHRwIiwiaGVhZGVycyI6e319fV19"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a��b",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a truncated four-byte sequence in a name",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "bytes",
+          "base64": "eyJzZXJ2ZXJzIjpbeyJuYW1lIjoiYfCfYiIsImNyZWRlbnRpYWwiOnsidXJsIjoiaHR0cHM6Ly9hLmV4YW1wbGUiLCJ0cmFuc3BvcnQiOiJodHRwIiwiaGVhZGVycyI6e319fV19"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {},
+      "expected": [
+        {
+          "name": "a�b",
+          "cred": {
+            "url": "https://a.example",
+            "transport": "http",
+            "headers": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "legacy env variables change nothing when the file is valid",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{\"version\":1,\"servers\":[{\"name\":\"ggui\",\"credential\":{\"url\":\"https://relay.example/_executor/mcp/abc\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer cap\"}}}]}"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": "env-legacy-anthropic-token",
+        "OPENAI_API_KEY": "env-legacy-openai-key",
+        "GUUEY_BUILDER_KEY_LANE": "legacy-env",
+        "GUUEY_MCP_URL": "https://env-legacy.example/mcp"
+      },
+      "expected": [
+        {
+          "name": "ggui",
+          "cred": {
+            "url": "https://relay.example/_executor/mcp/abc",
+            "transport": "http",
+            "headers": {
+              "authorization": "Bearer cap"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "legacy env variables change nothing when the file is missing",
+      "serversFile": {
+        "kind": "missing"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": "env-legacy-anthropic-token",
+        "OPENAI_API_KEY": "env-legacy-openai-key",
+        "GUUEY_BUILDER_KEY_LANE": "legacy-env",
+        "GUUEY_MCP_URL": "https://env-legacy.example/mcp"
+      },
+      "expected": []
+    },
+    {
+      "name": "legacy env variables change nothing when the value is empty",
+      "serversFile": {
+        "kind": "empty"
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": "env-legacy-anthropic-token",
+        "OPENAI_API_KEY": "env-legacy-openai-key",
+        "GUUEY_BUILDER_KEY_LANE": "legacy-env",
+        "GUUEY_MCP_URL": "https://env-legacy.example/mcp"
+      },
+      "expected": []
+    },
+    {
+      "name": "legacy env variables change nothing when the file is malformed",
+      "serversFile": {
+        "kind": "file",
+        "node": {
+          "kind": "text",
+          "text": "{ not json"
+        }
+      },
+      "session": {
+        "kind": "folder",
+        "entries": {
+          "planted.json": {
+            "kind": "text",
+            "text": "{\"url\":\"https://attacker.example/mcp\",\"transport\":\"http\",\"headers\":{\"authorization\":\"Bearer planted\"}}"
+          }
+        }
+      },
+      "env": {
+        "ANTHROPIC_AUTH_TOKEN": "env-legacy-anthropic-token",
+        "OPENAI_API_KEY": "env-legacy-openai-key",
+        "GUUEY_BUILDER_KEY_LANE": "legacy-env",
+        "GUUEY_MCP_URL": "https://env-legacy.example/mcp"
+      },
+      "expected": []
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+[
+  {
+    "name": "no offer: no writer",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "writes": [],
+    "expected": {
+      "writer": false
+    }
+  },
+  {
+    "name": "a malformed offer: no writer",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":0}}",
+    "writes": [],
+    "expected": {
+      "writer": false
+    }
+  },
+  {
+    "name": "the cap: written at the cap, refused one byte over",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":100}}",
+    "writes": [
+      {
+        "envelope": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "askIds": [
+          "approval_c"
+        ]
+      },
+      {
+        "envelope": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "askIds": [
+          "approval_c"
+        ]
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 100,
+      "results": [
+        "over_cap",
+        "written"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"askIds\":[\"approval_c\"]}\n"
+    }
+  },
+  {
+    "name": "the cap counts escapes and UTF-8 bytes",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":10}}",
+    "writes": [
+      {
+        "envelope": "\"€ab",
+        "askIds": []
+      },
+      {
+        "envelope": "\"€€ab",
+        "askIds": []
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 10,
+      "results": [
+        "written",
+        "over_cap"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"\\\"€ab\",\"askIds\":[]}\n"
+    }
+  },
+  {
+    "name": "a lone surrogate counts as its six-byte escape",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":8}}",
+    "writes": [
+      {
+        "envelope": "\ud800",
+        "askIds": []
+      },
+      {
+        "envelope": "\ud800a",
+        "askIds": []
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 8,
+      "results": [
+        "written",
+        "over_cap"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"\\ud800\",\"askIds\":[]}\n"
+    }
+  },
+  {
+    "name": "an astral character counts four bytes",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":6}}",
+    "writes": [
+      {
+        "envelope": "😀",
+        "askIds": []
+      },
+      {
+        "envelope": "😀a",
+        "askIds": []
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 6,
+      "results": [
+        "written",
+        "over_cap"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"😀\",\"askIds\":[]}\n"
+    }
+  },
+  {
+    "name": "the offer never raises the protocol cap",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":8388608}}",
+    "writes": [
+      {
+        "envelope": "small",
+        "askIds": [
+          "a"
+        ]
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 2097152,
+      "results": [
+        "written"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"small\",\"askIds\":[\"a\"]}\n"
+    }
+  },
+  {
+    "name": "an offer of 1e300 is the protocol cap",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"suspend\":{\"maxEnvelopeBytes\":1e300}}",
+    "writes": [
+      {
+        "envelope": "e",
+        "askIds": []
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 2097152,
+      "results": [
+        "written"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"e\",\"askIds\":[]}\n"
+    }
+  },
+  {
+    "name": "a JSON envelope round-trips",
+    "invoke": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":1024}}",
+    "writes": [
+      {
+        "envelope": "{\"runState\":\"é\\n\\\"x\\\"\"}",
+        "askIds": [
+          "approval_a",
+          "approval_b"
+        ]
+      }
+    ],
+    "expected": {
+      "writer": true,
+      "maxEnvelopeBytes": 1024,
+      "results": [
+        "written"
+      ],
+      "output": "{\"type\":\"suspend\",\"envelope\":\"{\\\"runState\\\":\\\"é\\\\n\\\\\\\"x\\\\\\\"\\\"}\",\"askIds\":[\"approval_a\",\"approval_b\"]}\n"
+    }
+  }
+]

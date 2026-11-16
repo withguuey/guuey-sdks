@@ -1,0 +1,88 @@
+[
+  {
+    "name": "no kind",
+    "input": {
+      "text": "hello"
+    },
+    "expected": {
+      "ok": "hello",
+      "line": "\"hello\""
+    }
+  },
+  {
+    "name": "no kind, empty text",
+    "input": {
+      "text": ""
+    },
+    "expected": {
+      "ok": "",
+      "line": "\"\""
+    }
+  },
+  {
+    "name": "context-only, empty text",
+    "input": {
+      "text": "",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "The user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"The user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  },
+  {
+    "name": "context-only, whitespace only",
+    "input": {
+      "text": " \n\t ",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "The user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"The user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  },
+  {
+    "name": "context-only, JavaScript whitespace only",
+    "input": {
+      "text": " ﻿ 　",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "The user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"The user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  },
+  {
+    "name": "context-only, U+001C is not whitespace",
+    "input": {
+      "text": "\u001c",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "\u001c\n\nThe user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"\\u001c\\n\\nThe user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  },
+  {
+    "name": "context-only, NEL is not whitespace",
+    "input": {
+      "text": "",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "\n\nThe user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"\\n\\nThe user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  },
+  {
+    "name": "context-only, framed page context",
+    "input": {
+      "text": "<page_context>a photo</page_context>",
+      "inputKind": "context-only"
+    },
+    "expected": {
+      "ok": "<page_context>a photo</page_context>\n\nThe user sent this turn without any text. Respond to what the page context carries.",
+      "line": "\"<page_context>a photo</page_context>\\n\\nThe user sent this turn without any text. Respond to what the page context carries.\""
+    }
+  }
+]

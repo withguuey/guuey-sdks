@@ -1,0 +1,38 @@
+{
+  "PROTOCOL_VERSION": "v1",
+  "ADK_HOST_COMPLETION_CAPABILITY": "adk.host-completion",
+  "HOST_SUSPEND_CAPABILITY": "host.suspend.v1",
+  "TOOL_GATES_CAPABILITY": "tool-gates.v1",
+  "CLI_SESSION_CAPABILITY": "cli-session.v1",
+  "CLI_SESSION_HASH_VERSION": 1,
+  "CLI_SESSION_RESUME_FAILED": "cli_session_resume_failed",
+  "SDK_SESSION_CAPABILITY": "sdk-session.v1",
+  "SDK_SESSION_HASH_VERSION": 1,
+  "SDK_SESSION_PROMPT_SHAS_MAX": 256,
+  "SDK_SESSION_IDS_MAX": 16,
+  "INVOKE_IMAGES_CAPABILITY": "invoke.images.v1",
+  "INVOKE_IMAGE_MIME_TYPES": [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp"
+  ],
+  "SUSPEND_ENVELOPE_MAX_BYTES": 2097152,
+  "INPUT_KINDS": [
+    "context-only"
+  ],
+  "CLIENT_CATALOGS_MAX": 16,
+  "CLIENT_CATALOG_ID_MAX_CHARS": 64,
+  "CLIENT_CATALOG_ID_PATTERN": "^[A-Za-z0-9._~:/@+-]{1,64}$",
+  "END_THREAD_CODE_PATTERN": "^[A-Z][A-Z0-9_]{0,39}$",
+  "END_THREAD_MESSAGE_MAX_CHARS": 500,
+  "CONTEXT_ONLY_TURN_TEXT": "The user sent this turn without any text. Respond to what the page context carries.",
+  "MODEL_TEXT_INPUT_KIND_CAPABILITIES": [
+    "input-kind:context-only"
+  ],
+  "LAUNCH_ENVELOPE_FD_ENV": "GUUEY_LAUNCH_ENVELOPE_FD",
+  "LAUNCH_ENVELOPE_FD": 5,
+  "LAUNCH_ENVELOPE_VERSION": 1,
+  "LAUNCH_ENVELOPE_MAX_BYTES": 16384,
+  "LAUNCH_ENVELOPE_DEADLINE_MS": 10000
+}

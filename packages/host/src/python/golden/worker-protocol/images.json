@@ -1,0 +1,184 @@
+[
+  {
+    "name": "base64: padded",
+    "fn": "isStandardBase64",
+    "input": "iVBORw0KGgo=",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "base64: two pads",
+    "fn": "isStandardBase64",
+    "input": "UklGRg==",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "base64: no pad",
+    "fn": "isStandardBase64",
+    "input": "abcd",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "base64: empty",
+    "fn": "isStandardBase64",
+    "input": "",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: not a multiple of 4",
+    "fn": "isStandardBase64",
+    "input": "abc",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: three pads",
+    "fn": "isStandardBase64",
+    "input": "a===",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: pad in the middle",
+    "fn": "isStandardBase64",
+    "input": "ab=c",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: URL alphabet",
+    "fn": "isStandardBase64",
+    "input": "ab-_",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: trailing newline",
+    "fn": "isStandardBase64",
+    "input": "abc\n",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: line break inside",
+    "fn": "isStandardBase64",
+    "input": "ab\ncdefg",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "base64: non-ASCII",
+    "fn": "isStandardBase64",
+    "input": "abé=",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "mime: png",
+    "fn": "isInvokeImageMimeType",
+    "input": "image/png",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "mime: jpeg",
+    "fn": "isInvokeImageMimeType",
+    "input": "image/jpeg",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "mime: svg",
+    "fn": "isInvokeImageMimeType",
+    "input": "image/svg+xml",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "mime: upper case",
+    "fn": "isInvokeImageMimeType",
+    "input": "IMAGE/PNG",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "mime: a number",
+    "fn": "isInvokeImageMimeType",
+    "input": 1,
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "mime: null",
+    "fn": "isInvokeImageMimeType",
+    "input": null,
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "capabilities: with images",
+    "fn": "invokeImagesCapabilities",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}]}",
+    "expected": {
+      "ok": [
+        "invoke.images.v1"
+      ],
+      "line": "[\"invoke.images.v1\"]"
+    }
+  },
+  {
+    "name": "capabilities: without images",
+    "fn": "invokeImagesCapabilities",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": [],
+      "line": "[]"
+    }
+  },
+  {
+    "name": "capabilities: malformed images read as none",
+    "fn": "invokeImagesCapabilities",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"\"}]}",
+    "expected": {
+      "ok": [],
+      "line": "[]"
+    }
+  }
+]

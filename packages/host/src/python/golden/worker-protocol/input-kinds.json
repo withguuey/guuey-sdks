@@ -1,0 +1,67 @@
+[
+  {
+    "name": "known",
+    "fn": "isInputKind",
+    "input": "context-only",
+    "expected": {
+      "ok": true,
+      "line": "true"
+    }
+  },
+  {
+    "name": "unknown",
+    "fn": "isInputKind",
+    "input": "telepathy",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "upper case",
+    "fn": "isInputKind",
+    "input": "CONTEXT-ONLY",
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "a number",
+    "fn": "isInputKind",
+    "input": 7,
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "null",
+    "fn": "isInputKind",
+    "input": null,
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "a list holding the kind",
+    "fn": "isInputKind",
+    "input": [
+      "context-only"
+    ],
+    "expected": {
+      "ok": false,
+      "line": "false"
+    }
+  },
+  {
+    "name": "capability",
+    "fn": "inputKindCapability",
+    "input": "context-only",
+    "expected": {
+      "ok": "input-kind:context-only",
+      "line": "\"input-kind:context-only\""
+    }
+  }
+]

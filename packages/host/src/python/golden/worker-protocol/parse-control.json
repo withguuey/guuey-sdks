@@ -1,0 +1,4142 @@
+[
+  {
+    "name": "non-JSON: plain text",
+    "input": "nope",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: nope"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: empty line",
+    "input": "",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: "
+      }
+    }
+  },
+  {
+    "name": "non-JSON: NaN literal",
+    "input": "{\"type\":\"invoke\",\"input\":NaN}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"invoke\",\"input\":NaN}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: Infinity literal",
+    "input": "{\"type\":\"shutdown\",\"x\":Infinity}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"shutdown\",\"x\":Infinity}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: -Infinity literal",
+    "input": "[-Infinity]",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: [-Infinity]"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: trailing comma",
+    "input": "{\"type\":\"shutdown\",}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"shutdown\",}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: single quotes",
+    "input": "{'type':'shutdown'}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {'type':'shutdown'}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: leading zero",
+    "input": "{\"type\":\"shutdown\",\"n\":01}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"shutdown\",\"n\":01}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: raw tab inside a string",
+    "input": "{\"type\":\"shutdown\",\"x\":\"a\tb\"}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"shutdown\",\"x\":\"a\tb\"}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: byte order mark first",
+    "input": "﻿{\"type\":\"shutdown\"}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: ﻿{\"type\":\"shutdown\"}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: two values",
+    "input": "{\"type\":\"shutdown\"} {}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"shutdown\"} {}"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: truncated object",
+    "input": "{\"type\":\"invoke\",\"input\":\"x\"",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: {\"type\":\"invoke\",\"input\":\"x\""
+      }
+    }
+  },
+  {
+    "name": "non-JSON: excerpt cut at 200 UTF-16 units",
+    "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: excerpt cut through a surrogate pair",
+    "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀tail",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d"
+      }
+    }
+  },
+  {
+    "name": "non-JSON: excerpt of astral characters",
+    "input": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "non-JSON control line: 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      }
+    }
+  },
+  {
+    "name": "non-object: number",
+    "input": "42",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: 42"
+      }
+    }
+  },
+  {
+    "name": "non-object: array",
+    "input": "[]",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: []"
+      }
+    }
+  },
+  {
+    "name": "non-object: null",
+    "input": "null",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: null"
+      }
+    }
+  },
+  {
+    "name": "non-object: string",
+    "input": "\"invoke\"",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: \"invoke\""
+      }
+    }
+  },
+  {
+    "name": "non-object: true",
+    "input": "true",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: true"
+      }
+    }
+  },
+  {
+    "name": "non-object: long array excerpt",
+    "input": "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99]",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line is not an object: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69"
+      }
+    }
+  },
+  {
+    "name": "no string type: missing",
+    "input": "{}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line has no string `type`"
+      }
+    }
+  },
+  {
+    "name": "no string type: number",
+    "input": "{\"type\":1}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line has no string `type`"
+      }
+    }
+  },
+  {
+    "name": "no string type: null",
+    "input": "{\"type\":null}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line has no string `type`"
+      }
+    }
+  },
+  {
+    "name": "no string type: array",
+    "input": "{\"type\":[\"invoke\"]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "control line has no string `type`"
+      }
+    }
+  },
+  {
+    "name": "unknown type: a newer Router's cancel",
+    "input": "{\"type\":\"cancel\",\"turnId\":\"t1\",\"reason\":\"user\"}",
+    "expected": {
+      "ok": {
+        "type": "unknown",
+        "rawType": "cancel"
+      },
+      "line": "{\"type\":\"unknown\",\"rawType\":\"cancel\"}"
+    }
+  },
+  {
+    "name": "unknown type: literally unknown",
+    "input": "{\"type\":\"unknown\",\"x\":1}",
+    "expected": {
+      "ok": {
+        "type": "unknown",
+        "rawType": "unknown"
+      },
+      "line": "{\"type\":\"unknown\",\"rawType\":\"unknown\"}"
+    }
+  },
+  {
+    "name": "unknown type: empty string",
+    "input": "{\"type\":\"\"}",
+    "expected": {
+      "ok": {
+        "type": "unknown",
+        "rawType": ""
+      },
+      "line": "{\"type\":\"unknown\",\"rawType\":\"\"}"
+    }
+  },
+  {
+    "name": "unknown type: non-ASCII",
+    "input": "{\"type\":\"résumé😀\"}",
+    "expected": {
+      "ok": {
+        "type": "unknown",
+        "rawType": "résumé😀"
+      },
+      "line": "{\"type\":\"unknown\",\"rawType\":\"résumé😀\"}"
+    }
+  },
+  {
+    "name": "unknown type: case differs from invoke",
+    "input": "{\"type\":\"Invoke\"}",
+    "expected": {
+      "ok": {
+        "type": "unknown",
+        "rawType": "Invoke"
+      },
+      "line": "{\"type\":\"unknown\",\"rawType\":\"Invoke\"}"
+    }
+  },
+  {
+    "name": "shutdown",
+    "input": "{\"type\":\"shutdown\"}",
+    "expected": {
+      "ok": {
+        "type": "shutdown"
+      },
+      "line": "{\"type\":\"shutdown\"}"
+    }
+  },
+  {
+    "name": "shutdown: extra members dropped",
+    "input": "{\"type\":\"shutdown\",\"reason\":\"drain\",\"at\":1}",
+    "expected": {
+      "ok": {
+        "type": "shutdown"
+      },
+      "line": "{\"type\":\"shutdown\"}"
+    }
+  },
+  {
+    "name": "shutdown: surrounding JSON whitespace",
+    "input": " \t{\"type\":\"shutdown\"}\r\n ",
+    "expected": {
+      "ok": {
+        "type": "shutdown"
+      },
+      "line": "{\"type\":\"shutdown\"}"
+    }
+  },
+  {
+    "name": "duplicate type: the last one wins",
+    "input": "{\"type\":\"invoke\",\"type\":\"shutdown\"}",
+    "expected": {
+      "ok": {
+        "type": "shutdown"
+      },
+      "line": "{\"type\":\"shutdown\"}"
+    }
+  },
+  {
+    "name": "a __proto__ member is an ordinary member",
+    "input": "{\"__proto__\":{\"type\":\"invoke\"},\"type\":\"shutdown\"}",
+    "expected": {
+      "ok": {
+        "type": "shutdown"
+      },
+      "line": "{\"type\":\"shutdown\"}"
+    }
+  },
+  {
+    "name": "invoke: minimal",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: missing input",
+    "input": "{\"type\":\"invoke\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke missing string `input`"
+      }
+    }
+  },
+  {
+    "name": "invoke: input not a string",
+    "input": "{\"type\":\"invoke\",\"input\":5,\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke missing string `input`"
+      }
+    }
+  },
+  {
+    "name": "invoke: missing identity",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.identity missing string `userId`"
+      }
+    }
+  },
+  {
+    "name": "invoke: identity userId not a string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":7},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.identity missing string `userId`"
+      }
+    }
+  },
+  {
+    "name": "invoke: identity is an array",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":[],\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.identity missing string `userId`"
+      }
+    }
+  },
+  {
+    "name": "invoke: identity authMode missing reads anonymous",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: identity authMode unknown reads anonymous",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"admin\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: identity extra members dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"authenticated\",\"appId\":\"a\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: missing fs",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.fs missing string `app`/`home`/`session`"
+      }
+    }
+  },
+  {
+    "name": "invoke: fs session not a string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":1},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.fs missing string `app`/`home`/`session`"
+      }
+    }
+  },
+  {
+    "name": "invoke: fs extra members dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\",\"tmp\":\"/tmp\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: history absent reads empty",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: history null",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":null}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.history must be an array"
+      }
+    }
+  },
+  {
+    "name": "invoke: history an object",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":{\"role\":\"user\",\"text\":\"x\"}}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.history must be an array"
+      }
+    }
+  },
+  {
+    "name": "invoke: history entry not an object",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[\"x\"]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.history entry missing string `text`"
+      }
+    }
+  },
+  {
+    "name": "invoke: history entry missing text",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\"}]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.history entry missing string `text`"
+      }
+    }
+  },
+  {
+    "name": "invoke: history roles",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"agent\",\"text\":\"a\"},{\"role\":\"system\",\"text\":\"b\"},{\"text\":\"c\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [
+          {
+            "role": "agent",
+            "text": "a"
+          },
+          {
+            "role": "user",
+            "text": "b"
+          },
+          {
+            "role": "user",
+            "text": "c"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"agent\",\"text\":\"a\"},{\"role\":\"user\",\"text\":\"b\"},{\"role\":\"user\",\"text\":\"c\"}]}"
+    }
+  },
+  {
+    "name": "invoke: history inputKind known and unknown",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"user\",\"text\":\"\",\"inputKind\":7},{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"telepathy\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [
+          {
+            "role": "user",
+            "text": "",
+            "inputKind": "context-only"
+          },
+          {
+            "role": "user",
+            "text": ""
+          },
+          {
+            "role": "user",
+            "text": ""
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"user\",\"text\":\"\"},{\"role\":\"user\",\"text\":\"\"}]}"
+    }
+  },
+  {
+    "name": "invoke: input checked before identity",
+    "input": "{\"type\":\"invoke\",\"input\":1,\"identity\":null,\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke missing string `input`"
+      }
+    }
+  },
+  {
+    "name": "invoke: identity checked before fs",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":null,\"fs\":null,\"history\":[]}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.identity missing string `userId`"
+      }
+    }
+  },
+  {
+    "name": "invoke: fs checked before history",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":null,\"history\":null}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.fs missing string `app`/`home`/`session`"
+      }
+    }
+  },
+  {
+    "name": "invoke: a malformed lenient member never wins over a required one",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":null,\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":\"x\",\"resume\":1}",
+    "expected": {
+      "error": {
+        "name": "Error",
+        "message": "invoke.identity missing string `userId`"
+      }
+    }
+  },
+  {
+    "name": "inputKind: known",
+    "input": "{\"type\":\"invoke\",\"input\":\"\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"inputKind\":\"context-only\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "",
+        "inputKind": "context-only",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"\",\"inputKind\":\"context-only\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "inputKind: unknown",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"inputKind\":\"telepathy\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "inputKind: number",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"inputKind\":7}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "fsBound: true",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"fsBound\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[]}"
+    }
+  },
+  {
+    "name": "fsBound: false",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"fsBound\":false}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": false,
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":false,\"history\":[]}"
+    }
+  },
+  {
+    "name": "fsBound: string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"fsBound\":\"true\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "fsBound: number",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"fsBound\":1}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "priorMemory: entries kept and dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorMemory\":[{\"key\":\"k\",\"value\":1},{\"value\":null},{\"key\":5,\"value\":\"v\"},{\"key\":\"nov\"},\"str\",[1],null]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorMemory": [
+          {
+            "value": 1,
+            "key": "k"
+          },
+          {
+            "value": null
+          },
+          {
+            "value": "v"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorMemory\":[{\"value\":1,\"key\":\"k\"},{\"value\":null},{\"value\":\"v\"}]}"
+    }
+  },
+  {
+    "name": "priorMemory: none survive",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorMemory\":[{\"key\":\"k\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "priorMemory: empty",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorMemory\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "priorMemory: not an array",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorMemory\":{\"value\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "priorState: object",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":{\"step\":1,\"items\":[\"a\",\"b\"]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": {
+          "step": 1,
+          "items": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":{\"step\":1,\"items\":[\"a\",\"b\"]}}"
+    }
+  },
+  {
+    "name": "priorState: null kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":null}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": null
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":null}"
+    }
+  },
+  {
+    "name": "priorState: zero kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":0}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": 0
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":0}"
+    }
+  },
+  {
+    "name": "priorState: empty string kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":\"\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": ""
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":\"\"}"
+    }
+  },
+  {
+    "name": "priorState: false kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":false}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": false
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":false}"
+    }
+  },
+  {
+    "name": "priorState: empty array kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "priorState": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"priorState\":[]}"
+    }
+  },
+  {
+    "name": "priorState: JavaScript number forms",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"priorState\":[1.0,1.5,1e21,1E-7,0.000001,123456789012345678901,-0,-0.0,0.1,100,1e-6,5e-324,1.7976931348623157e308,1e400,-1e400,9007199254740993,2e-7,-1.5e-10,1e20,123e-20,0.1e1,1e-0,25e2,4.35,0.3]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "priorState": [
+          1,
+          1.5,
+          1e+21,
+          1e-7,
+          0.000001,
+          123456789012345680000,
+          0,
+          0,
+          0.1,
+          100,
+          0.000001,
+          5e-324,
+          1.7976931348623157e+308,
+          null,
+          null,
+          9007199254740992,
+          2e-7,
+          -1.5e-10,
+          100000000000000000000,
+          1.23e-18,
+          1,
+          1,
+          2500,
+          4.35,
+          0.3
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"priorState\":[1,1.5,1e+21,1e-7,0.000001,123456789012345680000,0,0,0.1,100,0.000001,5e-324,1.7976931348623157e+308,null,null,9007199254740992,2e-7,-1.5e-10,100000000000000000000,1.23e-18,1,1,2500,4.35,0.3]}"
+    }
+  },
+  {
+    "name": "priorState: JavaScript key order",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"priorState\":{\"b\":1,\"10\":2,\"2\":3,\"a\":{\"1\":0,\"z\":1,\"0\":2},\"4294967295\":4,\"4294967294\":5,\"01\":6,\"-1\":7,\"1.5\":8}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "priorState": {
+          "2": 3,
+          "10": 2,
+          "4294967294": 5,
+          "b": 1,
+          "a": {
+            "0": 2,
+            "1": 0,
+            "z": 1
+          },
+          "4294967295": 4,
+          "01": 6,
+          "-1": 7,
+          "1.5": 8
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"priorState\":{\"2\":3,\"10\":2,\"4294967294\":5,\"b\":1,\"a\":{\"0\":2,\"1\":0,\"z\":1},\"4294967295\":4,\"01\":6,\"-1\":7,\"1.5\":8}}"
+    }
+  },
+  {
+    "name": "priorState: duplicate keys keep the first position and the last value",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"priorState\":{\"b\":1,\"1\":2,\"b\":3,\"a\":4}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "priorState": {
+          "1": 2,
+          "b": 3,
+          "a": 4
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"priorState\":{\"1\":2,\"b\":3,\"a\":4}}"
+    }
+  },
+  {
+    "name": "priorState: escapes and non-ASCII",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"priorState\":\"q\\\"b\\\\s\\/n\\nt\\tc\\u0001d\\u007f\\u00e9\\u2028\\ud83d\\ude00\\ud800 lone\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "priorState": "q\"b\\s/n\nt\tc\u0001dé 😀\ud800 lone"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"priorState\":\"q\\\"b\\\\s/n\\nt\\tc\\u0001dé 😀\\ud800 lone\"}"
+    }
+  },
+  {
+    "name": "priorState: __proto__ member passes through",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"priorState\":{\"__proto__\":{\"x\":1},\"y\":2}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "priorState": {
+          "__proto__": {
+            "x": 1
+          },
+          "y": 2
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"priorState\":{\"__proto__\":{\"x\":1},\"y\":2}}"
+    }
+  },
+  {
+    "name": "userMemory: string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"userMemory\":\"# memory\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "userMemory": "# memory"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"userMemory\":\"# memory\"}"
+    }
+  },
+  {
+    "name": "userMemory: empty string kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"userMemory\":\"\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "userMemory": ""
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"userMemory\":\"\"}"
+    }
+  },
+  {
+    "name": "userMemory: number dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"userMemory\":1}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "memoryAttached: true",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"memoryAttached\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "memoryAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"memoryAttached\":true}"
+    }
+  },
+  {
+    "name": "memoryAttached: string dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"memoryAttached\":\"yes\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "profileAccess: read",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileAccess\":\"read\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "profileAccess": "read"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileAccess\":\"read\"}"
+    }
+  },
+  {
+    "name": "profileAccess: read-write",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileAccess\":\"read-write\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "profileAccess": "read-write"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileAccess\":\"read-write\"}"
+    }
+  },
+  {
+    "name": "profileAccess: write dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileAccess\":\"write\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "profileSections: entries kept and dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"A\",\"content\":1},{\"content\":\"x\"},\"s\",{\"app\":\"B\",\"content\":\"b\",\"extra\":1}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "profileSections": [
+          {
+            "app": "",
+            "content": "[…omitted…]"
+          },
+          {
+            "app": "B",
+            "content": "b"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"B\",\"content\":\"b\"}]}"
+    }
+  },
+  {
+    "name": "profileSections: none survive",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"profileSections\":[{\"app\":1}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpression: full with variance",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{\"1\":2,\"b\":1},\"blueprintId\":\"bp\",\"variance\":{\"tone\":\"warm\"},\"extra\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpression": {
+          "chipKey": "c",
+          "intent": "i",
+          "contract": {
+            "1": 2,
+            "b": 1
+          },
+          "blueprintId": "bp",
+          "variance": {
+            "tone": "warm"
+          }
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{\"1\":2,\"b\":1},\"blueprintId\":\"bp\",\"variance\":{\"tone\":\"warm\"}}}"
+    }
+  },
+  {
+    "name": "firstImpression: empty variance dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{},\"variance\":{}}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpression": {
+          "chipKey": "c",
+          "intent": "i",
+          "contract": {}
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{}}}"
+    }
+  },
+  {
+    "name": "firstImpression: variance array dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{},\"variance\":[\"x\"]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpression": {
+          "chipKey": "c",
+          "intent": "i",
+          "contract": {}
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{}}}"
+    }
+  },
+  {
+    "name": "firstImpression: empty blueprintId dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{},\"blueprintId\":\"\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpression": {
+          "chipKey": "c",
+          "intent": "i",
+          "contract": {}
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":{}}}"
+    }
+  },
+  {
+    "name": "firstImpression: empty chipKey drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"\",\"intent\":\"i\",\"contract\":{}}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpression: empty intent drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"\",\"contract\":{}}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpression: contract array drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":[]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpression: contract null drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpression\":{\"chipKey\":\"c\",\"intent\":\"i\",\"contract\":null}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "mcpAvailability: entries kept and dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"\",\"state\":\"denied\"},{\"server\":\"x\",\"state\":\"gone\"},{\"state\":\"denied\"},[],{\"server\":\"drive\",\"state\":\"unavailable\",\"extra\":1}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "mcpAvailability": [
+          {
+            "server": "gmail",
+            "state": "connected"
+          },
+          {
+            "server": "drive",
+            "state": "unavailable"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"drive\",\"state\":\"unavailable\"}]}"
+    }
+  },
+  {
+    "name": "mcpAvailability: none survive",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"mcpAvailability\":[{\"server\":\"x\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: positive integer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":3}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "resourceCount": 3
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":3}"
+    }
+  },
+  {
+    "name": "resourceCount: zero dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":0}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: negative dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":-1}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: fraction dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":2.5}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: string dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":\"3\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: boolean dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resourceCount\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resourceCount: 3.0 is the integer 3",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"resourceCount\":3.0}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "resourceCount": 3
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"resourceCount\":3}"
+    }
+  },
+  {
+    "name": "resourceCount: 1e300 is an integer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"resourceCount\":1e300}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "resourceCount": 1e+300
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"resourceCount\":1e+300}"
+    }
+  },
+  {
+    "name": "resourceCount: 1e400 is Infinity, dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"resourceCount\":1e400}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "gguiAttached: true",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"gguiAttached\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "gguiAttached: null dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"gguiAttached\":null}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "clientCatalogs: kept, deduplicated, bad entries dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"guuey.a2ui.v1\",\"guuey.a2ui.v1\",\"has space\",7,\"\",\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"a/b@c+d~e:f-g_h\"]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "clientCatalogs": [
+          "guuey.a2ui.v1",
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "a/b@c+d~e:f-g_h"
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"guuey.a2ui.v1\",\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"a/b@c+d~e:f-g_h\"]}"
+    }
+  },
+  {
+    "name": "clientCatalogs: capped at 16",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"cat.0\",\"cat.1\",\"cat.2\",\"cat.3\",\"cat.4\",\"cat.5\",\"cat.6\",\"cat.7\",\"cat.8\",\"cat.9\",\"cat.10\",\"cat.11\",\"cat.12\",\"cat.13\",\"cat.14\",\"cat.15\",\"cat.16\",\"cat.17\",\"cat.18\",\"cat.19\"]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "clientCatalogs": [
+          "cat.0",
+          "cat.1",
+          "cat.2",
+          "cat.3",
+          "cat.4",
+          "cat.5",
+          "cat.6",
+          "cat.7",
+          "cat.8",
+          "cat.9",
+          "cat.10",
+          "cat.11",
+          "cat.12",
+          "cat.13",
+          "cat.14",
+          "cat.15"
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"cat.0\",\"cat.1\",\"cat.2\",\"cat.3\",\"cat.4\",\"cat.5\",\"cat.6\",\"cat.7\",\"cat.8\",\"cat.9\",\"cat.10\",\"cat.11\",\"cat.12\",\"cat.13\",\"cat.14\",\"cat.15\"]}"
+    }
+  },
+  {
+    "name": "clientCatalogs: none survive",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"bad id\"]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "clientCatalogs: not an array",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":{\"a2ui\":true}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "clientCatalogs: trailing newline in an id",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"clientCatalogs\":[\"guuey.a2ui.v1\\n\"]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "withheldTools: entries kept and dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\",\"extra\":1},{\"server\":\"\",\"tool\":\"t\"},{\"server\":\"s\"},null,[\"s\",\"t\"],\"s/t\",{\"server\":\"a\",\"tool\":\"b\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "withheldTools": [
+          {
+            "server": "ggui",
+            "tool": "ggui_consume"
+          },
+          {
+            "server": "a",
+            "tool": "b"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\"},{\"server\":\"a\",\"tool\":\"b\"}]}"
+    }
+  },
+  {
+    "name": "withheldTools: none survive",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"withheldTools\":[{\"server\":\"s\",\"tool\":\"\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "withheldTools: empty",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"withheldTools\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpressionShown: well formed",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"Welcome to Harbor Books\",\"message\":\"Glad you're here.\",\"options\":[\"Find a book\",\"Opening hours\"],\"extra\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpressionShown": {
+          "heading": "Welcome to Harbor Books",
+          "message": "Glad you're here.",
+          "options": [
+            "Find a book",
+            "Opening hours"
+          ]
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"Welcome to Harbor Books\",\"message\":\"Glad you're here.\",\"options\":[\"Find a book\",\"Opening hours\"]}}"
+    }
+  },
+  {
+    "name": "firstImpressionShown: empty message kept, empty options kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"H\",\"message\":\"\",\"options\":[]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "firstImpressionShown": {
+          "heading": "H",
+          "message": "",
+          "options": []
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"H\",\"message\":\"\",\"options\":[]}}"
+    }
+  },
+  {
+    "name": "firstImpressionShown: empty heading drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"\",\"message\":\"m\",\"options\":[]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpressionShown: non-string option drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":{\"heading\":\"H\",\"message\":\"m\",\"options\":[\"a\",2]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "firstImpressionShown: array drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"firstImpressionShown\":[\"H\",\"m\",[]]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: well formed",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":1024,\"extra\":true}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "suspend": {
+          "maxEnvelopeBytes": 1024
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":1024}}"
+    }
+  },
+  {
+    "name": "suspend: zero dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":0}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: negative dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":-1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: fraction dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":1.5}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: string dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":\"100\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: not an object",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"suspend\":\"yes\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "suspend: 1e300 kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"suspend\":{\"maxEnvelopeBytes\":1e300}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/a",
+          "home": "/h",
+          "session": "/s"
+        },
+        "history": [],
+        "suspend": {
+          "maxEnvelopeBytes": 1e+300
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"anonymous\"},\"fs\":{\"app\":\"/a\",\"home\":\"/h\",\"session\":\"/s\"},\"history\":[],\"suspend\":{\"maxEnvelopeBytes\":1e+300}}"
+    }
+  },
+  {
+    "name": "resume: well formed",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"{\\\"s\\\":1}\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"resolved\",\"extra\":1}],\"pausedUserSeq\":3,\"extra\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "resume": {
+          "envelope": "{\"s\":1}",
+          "answers": [
+            {
+              "askId": "a",
+              "toolCallId": "c",
+              "status": "resolved"
+            }
+          ],
+          "pausedUserSeq": 3
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"{\\\"s\\\":1}\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"resolved\"}],\"pausedUserSeq\":3}}"
+    }
+  },
+  {
+    "name": "resume: without pausedUserSeq",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "resume": {
+          "envelope": "e",
+          "answers": [
+            {
+              "askId": "a",
+              "toolCallId": "c",
+              "status": "declined"
+            }
+          ]
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}]}}"
+    }
+  },
+  {
+    "name": "resume: pausedUserSeq zero kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}],\"pausedUserSeq\":0}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "resume": {
+          "envelope": "e",
+          "answers": [
+            {
+              "askId": "a",
+              "toolCallId": "c",
+              "status": "declined"
+            }
+          ],
+          "pausedUserSeq": 0
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}],\"pausedUserSeq\":0}}"
+    }
+  },
+  {
+    "name": "resume: pausedUserSeq null drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}],\"pausedUserSeq\":null}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: pausedUserSeq negative drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}],\"pausedUserSeq\":-1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: pausedUserSeq fraction drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}],\"pausedUserSeq\":1.5}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: empty envelope drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"}]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: empty answers drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: one bad answer drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"declined\"},{\"askId\":\"b\",\"toolCallId\":\"\",\"status\":\"resolved\"}]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: unknown status drops it whole",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":\"e\",\"answers\":[{\"askId\":\"a\",\"toolCallId\":\"c\",\"status\":\"approved\"}]}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "resume: envelope not a string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"resume\":{\"envelope\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadClose: empty object",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":{}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "threadClose": {}
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":{}}"
+    }
+  },
+  {
+    "name": "threadClose: members reduced to the offer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":{\"x\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "threadClose": {}
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":{}}"
+    }
+  },
+  {
+    "name": "threadClose: array is no offer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadClose: true is no offer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadClose: null is no offer",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadClose\":null}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadId: kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}"
+    }
+  },
+  {
+    "name": "threadId: empty dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadId\":\"\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadId: number dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadId\":42}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "threadId: object dropped",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"threadId\":{\"id\":\"t\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: two images",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\",\"extra\":1},{\"kind\":\"inline\",\"mimeType\":\"image/webp\",\"data\":\"UklGRg==\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "attachments": [
+          {
+            "kind": "inline",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgo="
+          },
+          {
+            "kind": "inline",
+            "mimeType": "image/webp",
+            "data": "UklGRg=="
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"},{\"kind\":\"inline\",\"mimeType\":\"image/webp\",\"data\":\"UklGRg==\"}]}"
+    }
+  },
+  {
+    "name": "attachments: one unknown type drops the list",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"},{\"kind\":\"inline\",\"mimeType\":\"image/svg+xml\",\"data\":\"PHN2Zz4=\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: data with a line break",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBO\\nRw0KGgo=\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: data with a trailing newline",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\\n\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: data not padded to 4",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: empty data",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: data URL prefix",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"data:image/png;base64,iVBORw0KGgo=\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: url kind",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"url\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: empty list",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "attachments: three padding characters",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/gif\",\"data\":\"R0lGO===\"}]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: start",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"start\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "cliSession": {
+          "mode": "start",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"start\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"}}"
+    }
+  },
+  {
+    "name": "cliSession: resume with expectLastPromptSha",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"extra\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "cliSession": {
+          "mode": "resume",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+          "expectLastPromptSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+    }
+  },
+  {
+    "name": "cliSession: non-UUID id kept",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"start\",\"id\":\"not-a-uuid\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "cliSession": {
+          "mode": "start",
+          "id": "not-a-uuid"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"start\",\"id\":\"not-a-uuid\"}}"
+    }
+  },
+  {
+    "name": "cliSession: upper-case sha drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: short sha drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: sha with a trailing newline drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\\n\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: null sha drops it",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":null}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: unknown mode",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"fork\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: empty id",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: missing id",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"start\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "cliSession: a string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":\"resume\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "invoke: every optional member, in wire order",
+    "input": "{\"type\":\"invoke\",\"input\":\"\",\"inputKind\":\"context-only\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"priorMemory\":[{\"key\":\"k\",\"value\":{\"n\":1}}],\"priorState\":{\"step\":2},\"userMemory\":\"# memory\\n- likes tea\",\"memoryAttached\":true,\"profileAccess\":\"read-write\",\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"Notes\",\"content\":\"likes tea\"}],\"firstImpression\":{\"chipKey\":\"greet\",\"intent\":\"welcome\",\"contract\":{\"kind\":\"card\"},\"blueprintId\":\"bp_1\",\"variance\":{\"tone\":\"warm\"}},\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"drive\",\"state\":\"needs_authorization\"}],\"resourceCount\":3,\"gguiAttached\":true,\"clientCatalogs\":[\"guuey.a2ui.v1\"],\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\"}],\"firstImpressionShown\":{\"heading\":\"Hi\",\"message\":\"Welcome\",\"options\":[\"Start\",\"Help\"]},\"suspend\":{\"maxEnvelopeBytes\":1024},\"resume\":{\"envelope\":\"{}\",\"answers\":[{\"askId\":\"a1\",\"toolCallId\":\"c1\",\"status\":\"declined\"}],\"pausedUserSeq\":0},\"threadClose\":{},\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "",
+        "inputKind": "context-only",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "",
+            "inputKind": "context-only"
+          },
+          {
+            "role": "agent",
+            "text": "A nice photo."
+          }
+        ],
+        "priorMemory": [
+          {
+            "value": {
+              "n": 1
+            },
+            "key": "k"
+          }
+        ],
+        "priorState": {
+          "step": 2
+        },
+        "userMemory": "# memory\n- likes tea",
+        "memoryAttached": true,
+        "profileAccess": "read-write",
+        "profileSections": [
+          {
+            "app": "",
+            "content": "[…omitted…]"
+          },
+          {
+            "app": "Notes",
+            "content": "likes tea"
+          }
+        ],
+        "firstImpression": {
+          "chipKey": "greet",
+          "intent": "welcome",
+          "contract": {
+            "kind": "card"
+          },
+          "blueprintId": "bp_1",
+          "variance": {
+            "tone": "warm"
+          }
+        },
+        "mcpAvailability": [
+          {
+            "server": "gmail",
+            "state": "connected"
+          },
+          {
+            "server": "drive",
+            "state": "needs_authorization"
+          }
+        ],
+        "resourceCount": 3,
+        "gguiAttached": true,
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ],
+        "withheldTools": [
+          {
+            "server": "ggui",
+            "tool": "ggui_consume"
+          }
+        ],
+        "firstImpressionShown": {
+          "heading": "Hi",
+          "message": "Welcome",
+          "options": [
+            "Start",
+            "Help"
+          ]
+        },
+        "suspend": {
+          "maxEnvelopeBytes": 1024
+        },
+        "resume": {
+          "envelope": "{}",
+          "answers": [
+            {
+              "askId": "a1",
+              "toolCallId": "c1",
+              "status": "declined"
+            }
+          ],
+          "pausedUserSeq": 0
+        },
+        "threadClose": {},
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f",
+        "attachments": [
+          {
+            "kind": "inline",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgo="
+          }
+        ],
+        "cliSession": {
+          "mode": "resume",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+          "expectLastPromptSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"\",\"inputKind\":\"context-only\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"priorMemory\":[{\"value\":{\"n\":1},\"key\":\"k\"}],\"priorState\":{\"step\":2},\"userMemory\":\"# memory\\n- likes tea\",\"memoryAttached\":true,\"profileAccess\":\"read-write\",\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"Notes\",\"content\":\"likes tea\"}],\"firstImpression\":{\"chipKey\":\"greet\",\"intent\":\"welcome\",\"contract\":{\"kind\":\"card\"},\"blueprintId\":\"bp_1\",\"variance\":{\"tone\":\"warm\"}},\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"drive\",\"state\":\"needs_authorization\"}],\"resourceCount\":3,\"gguiAttached\":true,\"clientCatalogs\":[\"guuey.a2ui.v1\"],\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\"}],\"firstImpressionShown\":{\"heading\":\"Hi\",\"message\":\"Welcome\",\"options\":[\"Start\",\"Help\"]},\"suspend\":{\"maxEnvelopeBytes\":1024},\"resume\":{\"envelope\":\"{}\",\"answers\":[{\"askId\":\"a1\",\"toolCallId\":\"c1\",\"status\":\"declined\"}],\"pausedUserSeq\":0},\"threadClose\":{},\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+    }
+  },
+  {
+    "name": "invoke: every optional member, members sent in reverse",
+    "input": "{\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"},\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"threadClose\":{},\"resume\":{\"envelope\":\"{}\",\"answers\":[{\"askId\":\"a1\",\"toolCallId\":\"c1\",\"status\":\"declined\"}],\"pausedUserSeq\":0},\"suspend\":{\"maxEnvelopeBytes\":1024},\"firstImpressionShown\":{\"heading\":\"Hi\",\"message\":\"Welcome\",\"options\":[\"Start\",\"Help\"]},\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\"}],\"clientCatalogs\":[\"guuey.a2ui.v1\"],\"gguiAttached\":true,\"resourceCount\":3,\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"drive\",\"state\":\"needs_authorization\"}],\"firstImpression\":{\"chipKey\":\"greet\",\"intent\":\"welcome\",\"contract\":{\"kind\":\"card\"},\"blueprintId\":\"bp_1\",\"variance\":{\"tone\":\"warm\"}},\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"Notes\",\"content\":\"likes tea\"}],\"profileAccess\":\"read-write\",\"memoryAttached\":true,\"userMemory\":\"# memory\\n- likes tea\",\"priorState\":{\"step\":2},\"priorMemory\":[{\"key\":\"k\",\"value\":{\"n\":1}}],\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"fsBound\":true,\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"inputKind\":\"context-only\",\"input\":\"\",\"type\":\"invoke\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "",
+        "inputKind": "context-only",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "",
+            "inputKind": "context-only"
+          },
+          {
+            "role": "agent",
+            "text": "A nice photo."
+          }
+        ],
+        "priorMemory": [
+          {
+            "value": {
+              "n": 1
+            },
+            "key": "k"
+          }
+        ],
+        "priorState": {
+          "step": 2
+        },
+        "userMemory": "# memory\n- likes tea",
+        "memoryAttached": true,
+        "profileAccess": "read-write",
+        "profileSections": [
+          {
+            "app": "",
+            "content": "[…omitted…]"
+          },
+          {
+            "app": "Notes",
+            "content": "likes tea"
+          }
+        ],
+        "firstImpression": {
+          "chipKey": "greet",
+          "intent": "welcome",
+          "contract": {
+            "kind": "card"
+          },
+          "blueprintId": "bp_1",
+          "variance": {
+            "tone": "warm"
+          }
+        },
+        "mcpAvailability": [
+          {
+            "server": "gmail",
+            "state": "connected"
+          },
+          {
+            "server": "drive",
+            "state": "needs_authorization"
+          }
+        ],
+        "resourceCount": 3,
+        "gguiAttached": true,
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ],
+        "withheldTools": [
+          {
+            "server": "ggui",
+            "tool": "ggui_consume"
+          }
+        ],
+        "firstImpressionShown": {
+          "heading": "Hi",
+          "message": "Welcome",
+          "options": [
+            "Start",
+            "Help"
+          ]
+        },
+        "suspend": {
+          "maxEnvelopeBytes": 1024
+        },
+        "resume": {
+          "envelope": "{}",
+          "answers": [
+            {
+              "askId": "a1",
+              "toolCallId": "c1",
+              "status": "declined"
+            }
+          ],
+          "pausedUserSeq": 0
+        },
+        "threadClose": {},
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f",
+        "attachments": [
+          {
+            "kind": "inline",
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgo="
+          }
+        ],
+        "cliSession": {
+          "mode": "resume",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+          "expectLastPromptSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"\",\"inputKind\":\"context-only\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"priorMemory\":[{\"value\":{\"n\":1},\"key\":\"k\"}],\"priorState\":{\"step\":2},\"userMemory\":\"# memory\\n- likes tea\",\"memoryAttached\":true,\"profileAccess\":\"read-write\",\"profileSections\":[{\"app\":\"\",\"content\":\"[…omitted…]\"},{\"app\":\"Notes\",\"content\":\"likes tea\"}],\"firstImpression\":{\"chipKey\":\"greet\",\"intent\":\"welcome\",\"contract\":{\"kind\":\"card\"},\"blueprintId\":\"bp_1\",\"variance\":{\"tone\":\"warm\"}},\"mcpAvailability\":[{\"server\":\"gmail\",\"state\":\"connected\"},{\"server\":\"drive\",\"state\":\"needs_authorization\"}],\"resourceCount\":3,\"gguiAttached\":true,\"clientCatalogs\":[\"guuey.a2ui.v1\"],\"withheldTools\":[{\"server\":\"ggui\",\"tool\":\"ggui_consume\"}],\"firstImpressionShown\":{\"heading\":\"Hi\",\"message\":\"Welcome\",\"options\":[\"Start\",\"Help\"]},\"suspend\":{\"maxEnvelopeBytes\":1024},\"resume\":{\"envelope\":\"{}\",\"answers\":[{\"askId\":\"a1\",\"toolCallId\":\"c1\",\"status\":\"declined\"}],\"pausedUserSeq\":0},\"threadClose\":{},\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"attachments\":[{\"kind\":\"inline\",\"mimeType\":\"image/png\",\"data\":\"iVBORw0KGgo=\"}],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+    }
+  },
+  {
+    "name": "prev: suspend/resume old Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Approved: send_email",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "send it"
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: suspend/resume new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true,\"suspend\":{\"maxEnvelopeBytes\":2097152},\"resume\":{\"envelope\":\"{\\\"state\\\":\\\"opaque\\\"}\",\"answers\":[{\"askId\":\"approval_call_1\",\"toolCallId\":\"call_1\",\"status\":\"resolved\"}],\"pausedUserSeq\":3}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Approved: send_email",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "send it"
+          }
+        ],
+        "gguiAttached": true,
+        "suspend": {
+          "maxEnvelopeBytes": 2097152
+        },
+        "resume": {
+          "envelope": "{\"state\":\"opaque\"}",
+          "answers": [
+            {
+              "askId": "approval_call_1",
+              "toolCallId": "call_1",
+              "status": "resolved"
+            }
+          ],
+          "pausedUserSeq": 3
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true,\"suspend\":{\"maxEnvelopeBytes\":2097152},\"resume\":{\"envelope\":\"{\\\"state\\\":\\\"opaque\\\"}\",\"answers\":[{\"askId\":\"approval_call_1\",\"toolCallId\":\"call_1\",\"status\":\"resolved\"}],\"pausedUserSeq\":3}}"
+    }
+  },
+  {
+    "name": "prev: suspend/resume malformed new members",
+    "input": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true,\"suspend\":\"yes\",\"resume\":{\"envelope\":1}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Approved: send_email",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "send it"
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Approved: send_email\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"send it\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: inputKind invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"gguiAttached\":true,\"inputKind\":\"context-only\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "",
+        "inputKind": "context-only",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "",
+            "inputKind": "context-only"
+          },
+          {
+            "role": "agent",
+            "text": "A nice photo."
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"\",\"inputKind\":\"context-only\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":\"context-only\"},{\"role\":\"agent\",\"text\":\"A nice photo.\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: inputKind unknown kinds",
+    "input": "{\"type\":\"invoke\",\"input\":\"\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\",\"inputKind\":7}],\"gguiAttached\":true,\"inputKind\":\"telepathy\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": ""
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: threadId old Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"gguiAttached\":true,\"threadClose\":{}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "gguiAttached": true,
+        "threadClose": {}
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"gguiAttached\":true,\"threadClose\":{}}"
+    }
+  },
+  {
+    "name": "prev: threadId new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"gguiAttached\":true,\"threadClose\":{},\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "gguiAttached": true,
+        "threadClose": {},
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"gguiAttached\":true,\"threadClose\":{},\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}"
+    }
+  },
+  {
+    "name": "prev: threadId null",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"gguiAttached\":true,\"threadClose\":{},\"threadId\":null}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "gguiAttached": true,
+        "threadClose": {}
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"gguiAttached\":true,\"threadClose\":{}}"
+    }
+  },
+  {
+    "name": "prev: clientCatalogs old Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Book a table for four",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "hello"
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: clientCatalogs new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true,\"clientCatalogs\":[\"guuey.a2ui.v1\",\"guuey.json-render.v1\"]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Book a table for four",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "hello"
+          }
+        ],
+        "gguiAttached": true,
+        "clientCatalogs": [
+          "guuey.a2ui.v1",
+          "guuey.json-render.v1"
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true,\"clientCatalogs\":[\"guuey.a2ui.v1\",\"guuey.json-render.v1\"]}"
+    }
+  },
+  {
+    "name": "prev: clientCatalogs malformed",
+    "input": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true,\"clientCatalogs\":{\"a2ui\":true}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "Book a table for four",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "hello"
+          }
+        ],
+        "gguiAttached": true
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"Book a table for four\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"hello\"}],\"gguiAttached\":true}"
+    }
+  },
+  {
+    "name": "prev: threadClose old Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ]
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}]}"
+    }
+  },
+  {
+    "name": "prev: threadClose new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"threadClose\":{}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "threadClose": {}
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"threadClose\":{}}"
+    }
+  },
+  {
+    "name": "prev: cliSession old Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}"
+    }
+  },
+  {
+    "name": "prev: cliSession new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f",
+        "cliSession": {
+          "mode": "resume",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"}}"
+    }
+  },
+  {
+    "name": "prev: cliSession null",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"fsBound\":true,\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\",\"cliSession\":null}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "fsBound": true,
+        "history": [
+          {
+            "role": "user",
+            "text": "earlier"
+          }
+        ],
+        "threadId": "0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f"
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"fsBound\":true,\"history\":[{\"role\":\"user\",\"text\":\"earlier\"}],\"threadId\":\"0b5c3f1e-8d2a-4c7b-9e1f-3a4b5c6d7e8f\"}"
+    }
+  },
+  {
+    "name": "prev: expectLastPromptSha new Router invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": [],
+        "cliSession": {
+          "mode": "resume",
+          "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+          "expectLastPromptSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}}"
+    }
+  },
+  {
+    "name": "prev: expectLastPromptSha not a string",
+    "input": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[],\"cliSession\":{\"mode\":\"resume\",\"id\":\"6f9619ff-8b86-4011-b42d-00c04fc964ff\",\"expectLastPromptSha\":7}}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hello",
+        "identity": {
+          "userId": "u1",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hello\",\"identity\":{\"userId\":\"u1\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  },
+  {
+    "name": "prev: unknown-type invoke",
+    "input": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}",
+    "expected": {
+      "ok": {
+        "type": "invoke",
+        "input": "hi",
+        "identity": {
+          "userId": "u",
+          "authMode": "authenticated"
+        },
+        "fs": {
+          "app": "/app",
+          "home": "/home",
+          "session": "/session"
+        },
+        "history": []
+      },
+      "line": "{\"type\":\"invoke\",\"input\":\"hi\",\"identity\":{\"userId\":\"u\",\"authMode\":\"authenticated\"},\"fs\":{\"app\":\"/app\",\"home\":\"/home\",\"session\":\"/session\"},\"history\":[]}"
+    }
+  }
+]

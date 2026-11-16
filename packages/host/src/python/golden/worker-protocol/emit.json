@@ -1,0 +1,574 @@
+[
+  {
+    "name": "text",
+    "calls": [
+      {
+        "method": "text",
+        "text": "hello"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"hello\"}\n"
+  },
+  {
+    "name": "text: empty",
+    "calls": [
+      {
+        "method": "text",
+        "text": ""
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"\"}\n"
+  },
+  {
+    "name": "text: JSON escapes",
+    "calls": [
+      {
+        "method": "text",
+        "text": "q\" b\\ s/ nl\n cr\r tab\t bs\b ff\f nul\u0000 us\u001f vt\u000b"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"q\\\" b\\\\ s/ nl\\n cr\\r tab\\t bs\\b ff\\f nul\\u0000 us\\u001f vt\\u000b\"}\n"
+  },
+  {
+    "name": "text: characters written literally",
+    "calls": [
+      {
+        "method": "text",
+        "text": "del nel nbsp  é ls  ps  bom﻿ 中 😀"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"del nel nbsp  é ls  ps  bom﻿ 中 😀\"}\n"
+  },
+  {
+    "name": "text: lone high surrogate",
+    "calls": [
+      {
+        "method": "text",
+        "text": "a\ud800b"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"a\\ud800b\"}\n"
+  },
+  {
+    "name": "text: lone low surrogate",
+    "calls": [
+      {
+        "method": "text",
+        "text": "\udc00"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"\\udc00\"}\n"
+  },
+  {
+    "name": "text: surrogates in reverse order",
+    "calls": [
+      {
+        "method": "text",
+        "text": "\udc00\ud800"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"\\udc00\\ud800\"}\n"
+  },
+  {
+    "name": "text: a high surrogate at the end",
+    "calls": [
+      {
+        "method": "text",
+        "text": "x\udbff"
+      }
+    ],
+    "expected": "{\"type\":\"text\",\"text\":\"x\\udbff\"}\n"
+  },
+  {
+    "name": "done: default stopReason",
+    "calls": [
+      {
+        "method": "done",
+        "result": "final"
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"end_turn\",\"result\":\"final\"}\n"
+  },
+  {
+    "name": "done: max_turns",
+    "calls": [
+      {
+        "method": "done",
+        "result": "r",
+        "stopReason": "max_turns"
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"max_turns\",\"result\":\"r\"}\n"
+  },
+  {
+    "name": "done: error",
+    "calls": [
+      {
+        "method": "done",
+        "result": "",
+        "stopReason": "error"
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"error\",\"result\":\"\"}\n"
+  },
+  {
+    "name": "done: endThread",
+    "calls": [
+      {
+        "method": "done",
+        "result": "This chat is full.",
+        "stopReason": "end_turn",
+        "endThread": {
+          "code": "CHAT_FULL",
+          "message": "This chat is full."
+        }
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"end_turn\",\"result\":\"This chat is full.\",\"endThread\":{\"code\":\"CHAT_FULL\",\"message\":\"This chat is full.\"}}\n"
+  },
+  {
+    "name": "done: endThread with the default stopReason",
+    "calls": [
+      {
+        "method": "done",
+        "result": "r",
+        "endThread": {
+          "code": "X",
+          "message": "bye 👋"
+        }
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"end_turn\",\"result\":\"r\",\"endThread\":{\"code\":\"X\",\"message\":\"bye 👋\"}}\n"
+  },
+  {
+    "name": "done: endThread is written as given, not validated",
+    "calls": [
+      {
+        "method": "done",
+        "result": "r",
+        "endThread": {
+          "code": "lower",
+          "message": ""
+        }
+      }
+    ],
+    "expected": "{\"type\":\"done\",\"stopReason\":\"end_turn\",\"result\":\"r\",\"endThread\":{\"code\":\"lower\",\"message\":\"\"}}\n"
+  },
+  {
+    "name": "error",
+    "calls": [
+      {
+        "method": "error",
+        "message": "boom"
+      }
+    ],
+    "expected": "{\"type\":\"error\",\"message\":\"boom\"}\n"
+  },
+  {
+    "name": "native: object",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "claude-agent-sdk",
+        "event": {
+          "type": "assistant",
+          "message": {
+            "id": "m1",
+            "content": [
+              {
+                "type": "text",
+                "text": "hi"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"claude-agent-sdk\",\"event\":{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}}\n"
+  },
+  {
+    "name": "native: JavaScript key order",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": {
+          "2": 3,
+          "10": 2,
+          "4294967294": 5,
+          "b": 1,
+          "a": {
+            "0": 2,
+            "1": 0,
+            "z": 1
+          },
+          "4294967295": 4,
+          "01": 6
+        }
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":{\"2\":3,\"10\":2,\"4294967294\":5,\"b\":1,\"a\":{\"0\":2,\"1\":0,\"z\":1},\"4294967295\":4,\"01\":6}}\n"
+  },
+  {
+    "name": "native: numbers",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": [
+          0,
+          0,
+          1,
+          -1,
+          1.5,
+          0.1,
+          0.3,
+          1e+21,
+          100000000000000000000,
+          1e-7,
+          0.000001,
+          123456789012345680000,
+          5e-324,
+          1.7976931348623157e+308,
+          9007199254740992,
+          9007199254740994,
+          -1.5e-10,
+          4.35,
+          100,
+          2500
+        ]
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":[0,0,1,-1,1.5,0.1,0.3,1e+21,100000000000000000000,1e-7,0.000001,123456789012345680000,5e-324,1.7976931348623157e+308,9007199254740992,9007199254740994,-1.5e-10,4.35,100,2500]}\n"
+  },
+  {
+    "name": "native: null",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": null
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":null}\n"
+  },
+  {
+    "name": "native: string",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": "s"
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":\"s\"}\n"
+  },
+  {
+    "name": "native: empty containers",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": {
+          "a": [],
+          "b": {},
+          "c": [
+            []
+          ],
+          "d": [
+            {}
+          ]
+        }
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":{\"a\":[],\"b\":{},\"c\":[[]],\"d\":[{}]}}\n"
+  },
+  {
+    "name": "native: a __proto__ member",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": {
+          "__proto__": {
+            "x": 1
+          },
+          "a": 1
+        }
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":{\"__proto__\":{\"x\":1},\"a\":1}}\n"
+  },
+  {
+    "name": "native: booleans and nested nulls",
+    "calls": [
+      {
+        "method": "native",
+        "framework": "f",
+        "event": [
+          true,
+          false,
+          null,
+          {
+            "t": true
+          }
+        ]
+      }
+    ],
+    "expected": "{\"type\":\"native\",\"framework\":\"f\",\"event\":[true,false,null,{\"t\":true}]}\n"
+  },
+  {
+    "name": "hello",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "claude-agent-sdk",
+        "sdkName": "@anthropic-ai/claude-agent-sdk",
+        "sdkVersion": "0.3.199"
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"claude-agent-sdk\",\"sdkName\":\"@anthropic-ai/claude-agent-sdk\",\"sdkVersion\":\"0.3.199\"}\n"
+  },
+  {
+    "name": "hello: nulls",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "vanilla",
+        "sdkName": null,
+        "sdkVersion": null
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"vanilla\",\"sdkName\":null,\"sdkVersion\":null}\n"
+  },
+  {
+    "name": "hello: capabilities",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "google-adk",
+        "sdkName": "@google/adk",
+        "sdkVersion": "2.1.0",
+        "capabilities": [
+          "adk.host-completion"
+        ]
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"@google/adk\",\"sdkVersion\":\"2.1.0\",\"capabilities\":[\"adk.host-completion\"]}\n"
+  },
+  {
+    "name": "hello: empty capabilities write no key",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "google-adk",
+        "sdkName": "@google/adk",
+        "sdkVersion": "2.1.0",
+        "capabilities": []
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"google-adk\",\"sdkName\":\"@google/adk\",\"sdkVersion\":\"2.1.0\"}\n"
+  },
+  {
+    "name": "hello: tool gates, then tool gates with suspend",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "claude-agent-sdk",
+        "sdkName": "@anthropic-ai/claude-agent-sdk",
+        "sdkVersion": null,
+        "capabilities": [
+          "tool-gates.v1"
+        ]
+      },
+      {
+        "method": "hello",
+        "framework": "claude-agent-sdk",
+        "sdkName": "@anthropic-ai/claude-agent-sdk",
+        "sdkVersion": null,
+        "capabilities": [
+          "tool-gates.v1",
+          "host.suspend.v1"
+        ]
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"claude-agent-sdk\",\"sdkName\":\"@anthropic-ai/claude-agent-sdk\",\"sdkVersion\":null,\"capabilities\":[\"tool-gates.v1\"]}\n{\"type\":\"hello\",\"framework\":\"claude-agent-sdk\",\"sdkName\":\"@anthropic-ai/claude-agent-sdk\",\"sdkVersion\":null,\"capabilities\":[\"tool-gates.v1\",\"host.suspend.v1\"]}\n"
+  },
+  {
+    "name": "hello: thread-resume block",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "claude-agent-sdk",
+        "sdkName": "@anthropic-ai/claude-agent-sdk",
+        "sdkVersion": "0.3.282",
+        "capabilities": [
+          "tool-gates.v1",
+          "cli-session.v1"
+        ],
+        "cliSession": {
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionMode": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "systemPromptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "walks": [
+              {
+                "fromLastPromptLeaf": true,
+                "promptShas": [
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ],
+                "compactSummaries": 0,
+                "boundary": "none"
+              }
+            ],
+            "lastPromptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "entries": [
+              "x.jsonl"
+            ],
+            "unclassified": 0,
+            "corrupt": 0,
+            "benignDuplicates": 0,
+            "filePromptEntries": 2,
+            "fileCompactSummaries": 0
+          }
+        }
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"claude-agent-sdk\",\"sdkName\":\"@anthropic-ai/claude-agent-sdk\",\"sdkVersion\":\"0.3.282\",\"capabilities\":[\"tool-gates.v1\",\"cli-session.v1\"],\"cliSession\":{\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionMode\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"systemPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"walks\":[{\"fromLastPromptLeaf\":true,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"compactSummaries\":0,\"boundary\":\"none\"}],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"entries\":[\"x.jsonl\"],\"unclassified\":0,\"corrupt\":0,\"benignDuplicates\":0,\"filePromptEntries\":2,\"fileCompactSummaries\":0}}}\n"
+  },
+  {
+    "name": "hello: thread-resume block with readError and sessionIds",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "f",
+        "sdkName": null,
+        "sdkVersion": null,
+        "capabilities": [
+          "cli-session.v1"
+        ],
+        "cliSession": {
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionMode": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "stored": {
+            "systemPromptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "walks": [
+              {
+                "fromLastPromptLeaf": true,
+                "promptShas": [
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ],
+                "compactSummaries": 0,
+                "boundary": "none"
+              }
+            ],
+            "lastPromptShas": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ],
+            "entries": [
+              "x.jsonl"
+            ],
+            "unclassified": 0,
+            "corrupt": 0,
+            "benignDuplicates": 0,
+            "filePromptEntries": 2,
+            "fileCompactSummaries": 0,
+            "readError": "link",
+            "sessionIds": [
+              "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+            ]
+          }
+        }
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"f\",\"sdkName\":null,\"sdkVersion\":null,\"capabilities\":[\"cli-session.v1\"],\"cliSession\":{\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionMode\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"stored\":{\"systemPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"walks\":[{\"fromLastPromptLeaf\":true,\"promptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"compactSummaries\":0,\"boundary\":\"none\"}],\"lastPromptShas\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"entries\":[\"x.jsonl\"],\"unclassified\":0,\"corrupt\":0,\"benignDuplicates\":0,\"filePromptEntries\":2,\"fileCompactSummaries\":0,\"readError\":\"link\",\"sessionIds\":[\"6f9619ff-8b86-4011-b42d-00c04fc964ff\"]}}}\n"
+  },
+  {
+    "name": "hello: thread-resume block without stored",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "f",
+        "sdkName": null,
+        "sdkVersion": null,
+        "cliSession": {
+          "hashVersion": 1,
+          "systemPromptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headerShas": {
+            "model": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "permissionMode": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tools": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "mcpConfig": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "promptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "promptBytes": 120,
+          "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"f\",\"sdkName\":null,\"sdkVersion\":null,\"cliSession\":{\"hashVersion\":1,\"systemPromptSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"headerShas\":{\"model\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"permissionMode\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"tools\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"mcpConfig\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"promptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"promptBytes\":120,\"lastPromptSha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}\n"
+  },
+  {
+    "name": "a turn",
+    "calls": [
+      {
+        "method": "hello",
+        "framework": "openai-agents-sdk",
+        "sdkName": "@openai/agents",
+        "sdkVersion": "0.18.0",
+        "capabilities": [
+          "tool-gates.v1"
+        ]
+      },
+      {
+        "method": "native",
+        "framework": "openai-agents-sdk",
+        "event": {
+          "type": "raw_model_stream_event",
+          "data": {
+            "delta": "Hi"
+          }
+        }
+      },
+      {
+        "method": "text",
+        "text": "Hi"
+      },
+      {
+        "method": "done",
+        "result": "Hi"
+      }
+    ],
+    "expected": "{\"type\":\"hello\",\"framework\":\"openai-agents-sdk\",\"sdkName\":\"@openai/agents\",\"sdkVersion\":\"0.18.0\",\"capabilities\":[\"tool-gates.v1\"]}\n{\"type\":\"native\",\"framework\":\"openai-agents-sdk\",\"event\":{\"type\":\"raw_model_stream_event\",\"data\":{\"delta\":\"Hi\"}}}\n{\"type\":\"text\",\"text\":\"Hi\"}\n{\"type\":\"done\",\"stopReason\":\"end_turn\",\"result\":\"Hi\"}\n"
+  }
+]

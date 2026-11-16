@@ -1,0 +1,456 @@
+[
+  {
+    "name": "accepted",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": true
+      },
+      "line": "{\"ok\":true}"
+    }
+  },
+  {
+    "name": "unreadable",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "readError": "not-regular",
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "unreadable"
+      },
+      "line": "{\"ok\":false,\"reason\":\"unreadable\"}"
+    }
+  },
+  {
+    "name": "corrupt",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 1,
+      "corrupt": 1,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "corrupt"
+      },
+      "line": "{\"ok\":false,\"reason\":\"corrupt\"}"
+    }
+  },
+  {
+    "name": "unclassified",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 2,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "unclassified"
+      },
+      "line": "{\"ok\":false,\"reason\":\"unclassified\"}"
+    }
+  },
+  {
+    "name": "no session ids",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "no-session-ids"
+      },
+      "line": "{\"ok\":false,\"reason\":\"no-session-ids\"}"
+    }
+  },
+  {
+    "name": "empty session ids",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": []
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "no-session-ids"
+      },
+      "line": "{\"ok\":false,\"reason\":\"no-session-ids\"}"
+    }
+  },
+  {
+    "name": "other session",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+        "other"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "other-session"
+      },
+      "line": "{\"ok\":false,\"reason\":\"other-session\"}"
+    }
+  },
+  {
+    "name": "no last prompt",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "no-last-prompt"
+      },
+      "line": "{\"ok\":false,\"reason\":\"no-last-prompt\"}"
+    }
+  },
+  {
+    "name": "last prompt differs",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "last-prompt-differs"
+      },
+      "line": "{\"ok\":false,\"reason\":\"last-prompt-differs\"}"
+    }
+  },
+  {
+    "name": "only the LAST last prompt counts",
+    "record": {
+      "id": "6f9619ff-8b86-4011-b42d-00c04fc964ff",
+      "lastPromptSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "stored": {
+      "systemPromptShas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "walks": [
+        {
+          "fromLastPromptLeaf": true,
+          "promptShas": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "compactSummaries": 0,
+          "boundary": "none"
+        }
+      ],
+      "lastPromptShas": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "entries": [
+        "x.jsonl"
+      ],
+      "unclassified": 0,
+      "corrupt": 0,
+      "benignDuplicates": 0,
+      "filePromptEntries": 2,
+      "fileCompactSummaries": 0,
+      "sessionIds": [
+        "6f9619ff-8b86-4011-b42d-00c04fc964ff"
+      ]
+    },
+    "expected": {
+      "ok": {
+        "ok": false,
+        "reason": "last-prompt-differs"
+      },
+      "line": "{\"ok\":false,\"reason\":\"last-prompt-differs\"}"
+    }
+  }
+]

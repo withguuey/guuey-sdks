@@ -1,0 +1,91 @@
+[
+  {
+    "name": "both",
+    "context": {
+      "structuredContent": {
+        "surface": {
+          "id": "s"
+        },
+        "cache": {
+          "hit": true
+        }
+      },
+      "resultMeta": {
+        "ui": {
+          "resourceUri": "ui://card"
+        }
+      }
+    },
+    "expected": {
+      "ok": {
+        "structuredContent": {
+          "surface": {
+            "id": "s"
+          },
+          "cache": {
+            "hit": true
+          }
+        },
+        "_meta": {
+          "ui": {
+            "resourceUri": "ui://card"
+          }
+        }
+      },
+      "line": "{\"structuredContent\":{\"surface\":{\"id\":\"s\"},\"cache\":{\"hit\":true}},\"_meta\":{\"ui\":{\"resourceUri\":\"ui://card\"}}}"
+    }
+  },
+  {
+    "name": "structuredContent only",
+    "context": {
+      "structuredContent": {
+        "a": 1
+      }
+    },
+    "expected": {
+      "ok": {
+        "structuredContent": {
+          "a": 1
+        }
+      },
+      "line": "{\"structuredContent\":{\"a\":1}}"
+    }
+  },
+  {
+    "name": "resultMeta only",
+    "context": {
+      "resultMeta": {
+        "b": 2
+      }
+    },
+    "expected": {
+      "ok": {
+        "_meta": {
+          "b": 2
+        }
+      },
+      "line": "{\"_meta\":{\"b\":2}}"
+    }
+  },
+  {
+    "name": "empty objects kept",
+    "context": {
+      "structuredContent": {},
+      "resultMeta": {}
+    },
+    "expected": {
+      "ok": {
+        "structuredContent": {},
+        "_meta": {}
+      },
+      "line": "{\"structuredContent\":{},\"_meta\":{}}"
+    }
+  },
+  {
+    "name": "neither",
+    "context": {},
+    "expected": {
+      "returned": "undefined"
+    }
+  }
+]

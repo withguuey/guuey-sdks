@@ -1,0 +1,452 @@
+[
+  {
+    "name": "empty payload",
+    "op": "parse",
+    "input": "",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: empty payload"
+      }
+    }
+  },
+  {
+    "name": "only a newline",
+    "op": "parse",
+    "input": "\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not exactly one line"
+      }
+    }
+  },
+  {
+    "name": "version only",
+    "op": "parse",
+    "input": "{\"v\":1}\n",
+    "expected": {
+      "ok": {
+        "v": 1
+      },
+      "line": "{\"v\":1}"
+    }
+  },
+  {
+    "name": "version only, no newline",
+    "op": "parse",
+    "input": "{\"v\":1}",
+    "expected": {
+      "ok": {
+        "v": 1
+      },
+      "line": "{\"v\":1}"
+    }
+  },
+  {
+    "name": "two newlines",
+    "op": "parse",
+    "input": "{\"v\":1}\n\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not exactly one line"
+      }
+    }
+  },
+  {
+    "name": "two lines",
+    "op": "parse",
+    "input": "{\"v\":1}\n{\"v\":1}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not exactly one line"
+      }
+    }
+  },
+  {
+    "name": "a carriage return before the newline",
+    "op": "parse",
+    "input": "{\"v\":1}\r\n",
+    "expected": {
+      "ok": {
+        "v": 1
+      },
+      "line": "{\"v\":1}"
+    }
+  },
+  {
+    "name": "surrounding JSON whitespace",
+    "op": "parse",
+    "input": " {\"v\":1} \n",
+    "expected": {
+      "ok": {
+        "v": 1
+      },
+      "line": "{\"v\":1}"
+    }
+  },
+  {
+    "name": "truncated",
+    "op": "parse",
+    "input": "{\"v\":1",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not complete JSON"
+      }
+    }
+  },
+  {
+    "name": "NaN",
+    "op": "parse",
+    "input": "{\"v\":NaN}",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not complete JSON"
+      }
+    }
+  },
+  {
+    "name": "an array",
+    "op": "parse",
+    "input": "[]\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not an object"
+      }
+    }
+  },
+  {
+    "name": "null",
+    "op": "parse",
+    "input": "null\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload is not an object"
+      }
+    }
+  },
+  {
+    "name": "version 2",
+    "op": "parse",
+    "input": "{\"v\":2}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: unsupported envelope version"
+      }
+    }
+  },
+  {
+    "name": "version as a string",
+    "op": "parse",
+    "input": "{\"v\":\"1\"}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: unsupported envelope version"
+      }
+    }
+  },
+  {
+    "name": "version true",
+    "op": "parse",
+    "input": "{\"v\":true}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: unsupported envelope version"
+      }
+    }
+  },
+  {
+    "name": "version 1.0",
+    "op": "parse",
+    "input": "{\"v\":1.0}\n",
+    "expected": {
+      "ok": {
+        "v": 1
+      },
+      "line": "{\"v\":1}"
+    }
+  },
+  {
+    "name": "version missing",
+    "op": "parse",
+    "input": "{}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: unsupported envelope version"
+      }
+    }
+  },
+  {
+    "name": "an unknown member",
+    "op": "parse",
+    "input": "{\"v\":1,\"x\":1}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload has an unknown member"
+      }
+    }
+  },
+  {
+    "name": "an unknown member before an unsupported version",
+    "op": "parse",
+    "input": "{\"v\":2,\"x\":1}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: payload has an unknown member"
+      }
+    }
+  },
+  {
+    "name": "model null",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":null}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model is not an object"
+      }
+    }
+  },
+  {
+    "name": "model an array",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":[]}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model is not an object"
+      }
+    }
+  },
+  {
+    "name": "model with an unknown member",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"t\",\"endpoint\":\"x\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model has an unknown member"
+      }
+    }
+  },
+  {
+    "name": "model wire unsupported",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"bedrock\",\"token\":\"t\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model wire is not supported"
+      }
+    }
+  },
+  {
+    "name": "model wire missing",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"token\":\"t\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model wire is not supported"
+      }
+    }
+  },
+  {
+    "name": "model token empty",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":\"\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "model token with a space",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":\"a b\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "model token with a trailing newline escape",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":\"abc\\n\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "model token non-ASCII",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":\"té\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "model token a number",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":7}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "model token of 4096",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"gemini\",\"token\":\"tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt\"}}\n",
+    "expected": {
+      "ok": {
+        "v": 1,
+        "model": {
+          "wire": "gemini",
+          "token": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+        }
+      },
+      "line": "{\"v\":1,\"model\":{\"wire\":\"gemini\",\"token\":\"tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt\"}}"
+    }
+  },
+  {
+    "name": "model token of 4097",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"gemini\",\"token\":\"ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt\"}}\n",
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "members in reverse order",
+    "op": "parse",
+    "input": "{\"model\":{\"token\":\"tok\",\"wire\":\"openai\"},\"v\":1}\n",
+    "expected": {
+      "ok": {
+        "v": 1,
+        "model": {
+          "wire": "openai",
+          "token": "tok"
+        }
+      },
+      "line": "{\"v\":1,\"model\":{\"wire\":\"openai\",\"token\":\"tok\"}}"
+    }
+  },
+  {
+    "name": "prev: the 0.35.0 release line",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"turn-scoped-test\"}}\n",
+    "expected": {
+      "ok": {
+        "v": 1,
+        "model": {
+          "wire": "anthropic",
+          "token": "turn-scoped-test"
+        }
+      },
+      "line": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"turn-scoped-test\"}}"
+    }
+  },
+  {
+    "name": "prev: the thread-token line",
+    "op": "parse",
+    "input": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"guuey_thr_test\"}}\n",
+    "expected": {
+      "ok": {
+        "v": 1,
+        "model": {
+          "wire": "anthropic",
+          "token": "guuey_thr_test"
+        }
+      },
+      "line": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"guuey_thr_test\"}}"
+    }
+  },
+  {
+    "name": "encode: version only",
+    "op": "encode",
+    "input": {
+      "v": 1
+    },
+    "expected": {
+      "ok": "{\"v\":1}\n",
+      "line": "\"{\\\"v\\\":1}\\n\""
+    }
+  },
+  {
+    "name": "encode: a model capability",
+    "op": "encode",
+    "input": {
+      "v": 1,
+      "model": {
+        "wire": "anthropic",
+        "token": "turn-scoped-test"
+      }
+    },
+    "expected": {
+      "ok": "{\"v\":1,\"model\":{\"wire\":\"anthropic\",\"token\":\"turn-scoped-test\"}}\n",
+      "line": "\"{\\\"v\\\":1,\\\"model\\\":{\\\"wire\\\":\\\"anthropic\\\",\\\"token\\\":\\\"turn-scoped-test\\\"}}\\n\""
+    }
+  },
+  {
+    "name": "encode: a malformed token is refused",
+    "op": "encode",
+    "input": {
+      "v": 1,
+      "model": {
+        "wire": "openai",
+        "token": "has space"
+      }
+    },
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  },
+  {
+    "name": "encode: a non-ASCII token is refused",
+    "op": "encode",
+    "input": {
+      "v": 1,
+      "model": {
+        "wire": "openai",
+        "token": "🔑"
+      }
+    },
+    "expected": {
+      "error": {
+        "name": "LaunchEnvelopeError",
+        "message": "launch envelope refused: model token is malformed"
+      }
+    }
+  }
+]

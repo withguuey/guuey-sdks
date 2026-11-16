@@ -1,0 +1,668 @@
+[
+  {
+    "name": "bare anonymous turn",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        }
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "bare authenticated turn",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "authenticated"
+        }
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "authenticated",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: fsBound, count, fs",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": true,
+        "resourceCount": 3
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": true,
+      "resourceCount": 3,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: not fsBound",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": false,
+        "resourceCount": 3
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: fsBound absent",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "resourceCount": 3
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: count zero",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": true,
+        "resourceCount": 0
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: count absent",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": true
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: count negative",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": true,
+        "resourceCount": -2
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: count fractional",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "fsBound": true,
+        "resourceCount": 0.5
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": true,
+      "resourceCount": 0.5,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "resources: no fs",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fsBound": true,
+        "resourceCount": 3
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "memory attached true",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "memoryAttached": true
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": true,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "memory attached false",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "memoryAttached": false
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "profile read",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "profileAccess": "read"
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "profileAccess": "read",
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "profile read-write",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "profileAccess": "read-write"
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "profileAccess": "read-write",
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "ggui attached true",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "gguiAttached": true
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": true,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "ggui attached false",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "gguiAttached": false
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "a2ui catalog among others",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "clientCatalogs": [
+          "guuey.a2ui.v1",
+          "x"
+        ]
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": true
+    }
+  },
+  {
+    "name": "a2ui catalog alone",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ]
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": true
+    }
+  },
+  {
+    "name": "a2ui catalogs empty",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "clientCatalogs": []
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "a2ui catalog, surface opted out",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ]
+      },
+      "agent": {
+        "noTools": false,
+        "surfaceHints": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false,
+      "surfaceHints": false
+    }
+  },
+  {
+    "name": "a2ui catalog, hints true",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        },
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ]
+      },
+      "agent": {
+        "noTools": false,
+        "surfaceHints": true
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": true,
+      "surfaceHints": true
+    }
+  },
+  {
+    "name": "no tools",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": "/fs/app"
+        }
+      },
+      "agent": {
+        "noTools": true
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": true,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "/fs/app",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "app dir empty string",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "anonymous"
+        },
+        "fs": {
+          "app": ""
+        }
+      },
+      "agent": {
+        "noTools": false
+      }
+    },
+    "expected": {
+      "authMode": "anonymous",
+      "memoryAttached": false,
+      "noTools": false,
+      "resources": false,
+      "resourceCount": 0,
+      "appDir": "",
+      "gguiAttached": false,
+      "a2ui": false
+    }
+  },
+  {
+    "name": "everything set",
+    "input": {
+      "turn": {
+        "identity": {
+          "authMode": "authenticated"
+        },
+        "memoryAttached": true,
+        "profileAccess": "read-write",
+        "fsBound": true,
+        "resourceCount": 2,
+        "fs": {
+          "app": "/app"
+        },
+        "gguiAttached": true,
+        "clientCatalogs": [
+          "guuey.a2ui.v1"
+        ]
+      },
+      "agent": {
+        "noTools": false,
+        "surfaceHints": true
+      }
+    },
+    "expected": {
+      "authMode": "authenticated",
+      "memoryAttached": true,
+      "profileAccess": "read-write",
+      "noTools": false,
+      "resources": true,
+      "resourceCount": 2,
+      "appDir": "/app",
+      "gguiAttached": true,
+      "a2ui": true,
+      "surfaceHints": true
+    }
+  }
+]

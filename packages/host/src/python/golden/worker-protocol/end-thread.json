@@ -1,0 +1,236 @@
+[
+  {
+    "name": "valid",
+    "input": {
+      "code": "CHAT_FULL",
+      "message": "This chat is full."
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "code: one letter",
+    "input": {
+      "code": "X",
+      "message": "m"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "code: 40 characters",
+    "input": {
+      "code": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "message": "m"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "code: 41 characters",
+    "input": {
+      "code": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: empty",
+    "input": {
+      "code": "",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: leading digit",
+    "input": {
+      "code": "1A",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: leading underscore",
+    "input": {
+      "code": "_A",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: lower case",
+    "input": {
+      "code": "Chat",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: trailing newline",
+    "input": {
+      "code": "A\n",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "code: non-ASCII upper case",
+    "input": {
+      "code": "ÉT",
+      "message": "m"
+    },
+    "expected": {
+      "ok": "code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _",
+      "line": "\"code must be 1-40 characters: an upper-case letter, then upper-case letters, digits or _\""
+    }
+  },
+  {
+    "name": "message: empty",
+    "input": {
+      "code": "X",
+      "message": ""
+    },
+    "expected": {
+      "ok": "message must be 1-500 characters",
+      "line": "\"message must be 1-500 characters\""
+    }
+  },
+  {
+    "name": "message: 500 characters",
+    "input": {
+      "code": "X",
+      "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "message: 501 characters",
+    "input": {
+      "code": "X",
+      "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+    },
+    "expected": {
+      "ok": "message must be 1-500 characters",
+      "line": "\"message must be 1-500 characters\""
+    }
+  },
+  {
+    "name": "message: 500 astral characters",
+    "input": {
+      "code": "X",
+      "message": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "message: 501 astral characters",
+    "input": {
+      "code": "X",
+      "message": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    "expected": {
+      "ok": "message must be 1-500 characters",
+      "line": "\"message must be 1-500 characters\""
+    }
+  },
+  {
+    "name": "message: a line feed",
+    "input": {
+      "code": "X",
+      "message": "a\nb"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "message: a carriage return",
+    "input": {
+      "code": "X",
+      "message": "a\rb"
+    },
+    "expected": {
+      "ok": "message must not contain control characters other than a line feed",
+      "line": "\"message must not contain control characters other than a line feed\""
+    }
+  },
+  {
+    "name": "message: NUL",
+    "input": {
+      "code": "X",
+      "message": "\u0000"
+    },
+    "expected": {
+      "ok": "message must not contain control characters other than a line feed",
+      "line": "\"message must not contain control characters other than a line feed\""
+    }
+  },
+  {
+    "name": "message: DEL",
+    "input": {
+      "code": "X",
+      "message": ""
+    },
+    "expected": {
+      "ok": "message must not contain control characters other than a line feed",
+      "line": "\"message must not contain control characters other than a line feed\""
+    }
+  },
+  {
+    "name": "message: a C1 control",
+    "input": {
+      "code": "X",
+      "message": ""
+    },
+    "expected": {
+      "ok": "message must not contain control characters other than a line feed",
+      "line": "\"message must not contain control characters other than a line feed\""
+    }
+  },
+  {
+    "name": "message: no-break space",
+    "input": {
+      "code": "X",
+      "message": " "
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "message: a lone surrogate",
+    "input": {
+      "code": "X",
+      "message": "\ud800"
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  }
+]

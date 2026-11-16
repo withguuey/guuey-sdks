@@ -1,0 +1,231 @@
+[
+  {
+    "name": "two ids",
+    "input": [
+      "guuey.a2ui.v1",
+      "guuey.json-render.v1"
+    ],
+    "expected": {
+      "ok": [
+        "guuey.a2ui.v1",
+        "guuey.json-render.v1"
+      ],
+      "line": "[\"guuey.a2ui.v1\",\"guuey.json-render.v1\"]"
+    }
+  },
+  {
+    "name": "repeats dropped",
+    "input": [
+      "a",
+      "b",
+      "a"
+    ],
+    "expected": {
+      "ok": [
+        "a",
+        "b"
+      ],
+      "line": "[\"a\",\"b\"]"
+    }
+  },
+  {
+    "name": "bad entries dropped",
+    "input": [
+      "ok",
+      "",
+      " ",
+      "a b",
+      "tab\t",
+      7,
+      null,
+      [
+        "x"
+      ],
+      "é",
+      "ok2"
+    ],
+    "expected": {
+      "ok": [
+        "ok",
+        "ok2"
+      ],
+      "line": "[\"ok\",\"ok2\"]"
+    }
+  },
+  {
+    "name": "every allowed character",
+    "input": [
+      "AZaz09._~:/@+-"
+    ],
+    "expected": {
+      "ok": [
+        "AZaz09._~:/@+-"
+      ],
+      "line": "[\"AZaz09._~:/@+-\"]"
+    }
+  },
+  {
+    "name": "64 characters kept",
+    "input": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "expected": {
+      "ok": [
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      ],
+      "line": "[\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]"
+    }
+  },
+  {
+    "name": "65 characters dropped",
+    "input": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "a trailing newline dropped",
+    "input": [
+      "a\n"
+    ],
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "capped at 16, repeats do not count",
+    "input": [
+      "d",
+      "d",
+      "c0",
+      "c1",
+      "c2",
+      "c3",
+      "c4",
+      "c5",
+      "c6",
+      "c7",
+      "c8",
+      "c9",
+      "c10",
+      "c11",
+      "c12",
+      "c13",
+      "c14",
+      "c15",
+      "c16",
+      "c17",
+      "c18",
+      "c19"
+    ],
+    "expected": {
+      "ok": [
+        "d",
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14"
+      ],
+      "line": "[\"d\",\"c0\",\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"c6\",\"c7\",\"c8\",\"c9\",\"c10\",\"c11\",\"c12\",\"c13\",\"c14\"]"
+    }
+  },
+  {
+    "name": "bad entries do not count toward the cap",
+    "input": [
+      "bad id",
+      "bad id",
+      "bad id",
+      "bad id",
+      "bad id",
+      "c0",
+      "c1",
+      "c2",
+      "c3",
+      "c4",
+      "c5",
+      "c6",
+      "c7",
+      "c8",
+      "c9",
+      "c10",
+      "c11",
+      "c12",
+      "c13",
+      "c14",
+      "c15"
+    ],
+    "expected": {
+      "ok": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15"
+      ],
+      "line": "[\"c0\",\"c1\",\"c2\",\"c3\",\"c4\",\"c5\",\"c6\",\"c7\",\"c8\",\"c9\",\"c10\",\"c11\",\"c12\",\"c13\",\"c14\",\"c15\"]"
+    }
+  },
+  {
+    "name": "none survive",
+    "input": [
+      "bad id"
+    ],
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "empty",
+    "input": [],
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "an object",
+    "input": {
+      "a2ui": true
+    },
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "a string",
+    "input": "guuey.a2ui.v1",
+    "expected": {
+      "returned": "undefined"
+    }
+  },
+  {
+    "name": "null",
+    "input": null,
+    "expected": {
+      "returned": "undefined"
+    }
+  }
+]
