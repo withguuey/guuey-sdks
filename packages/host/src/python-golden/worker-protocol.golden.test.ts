@@ -699,7 +699,22 @@ const EMIT: readonly (readonly [string, readonly EmitCall[]])[] = [
     { method: "hello", framework: "claude-agent-sdk", sdkName: "@anthropic-ai/claude-agent-sdk", sdkVersion: null, capabilities: [TOOL_GATES_CAPABILITY, HOST_SUSPEND_CAPABILITY] },
   ]],
   ["hello: thread-resume block", [{ method: "hello", framework: NEW_HELLO.framework, sdkName: NEW_HELLO.sdkName, sdkVersion: NEW_HELLO.sdkVersion, capabilities: NEW_HELLO.capabilities, cliSession: BLOCK }]],
-  ["hello: thread-resume block with readError and sessionIds", [{ method: "hello", framework: "f", sdkName: null, sdkVersion: null, capabilities: [CLI_SESSION_CAPABILITY], cliSession: { ...BLOCK, stored: { ...STORED, readError: "link", sessionIds: [SESSION_ID] } } }]],
+  // The emitter writes the caller's object in the caller's key order, and the Python emitter writes its dataclass in
+  // DECLARATION order (protocol.ts). So every emit input here is built in declaration order: readError first, sessionIds
+  // after lastPromptShas, as HelloStoredMeasures declares them.
+  ["hello: thread-resume block with readError and sessionIds", [{ method: "hello", framework: "f", sdkName: null, sdkVersion: null, capabilities: [CLI_SESSION_CAPABILITY], cliSession: { ...BLOCK, stored: {
+    readError: "link",
+    systemPromptShas: STORED.systemPromptShas,
+    walks: STORED.walks,
+    lastPromptShas: STORED.lastPromptShas,
+    sessionIds: [SESSION_ID],
+    entries: STORED.entries,
+    unclassified: STORED.unclassified,
+    corrupt: STORED.corrupt,
+    benignDuplicates: STORED.benignDuplicates,
+    filePromptEntries: STORED.filePromptEntries,
+    fileCompactSummaries: STORED.fileCompactSummaries,
+  } } }]],
   ["hello: thread-resume block without stored", [{ method: "hello", framework: "f", sdkName: null, sdkVersion: null, cliSession: { ...IDS_OLD_BLOCK, stored: undefined } }]],
   ["a turn", [
     { method: "hello", framework: "openai-agents-sdk", sdkName: "@openai/agents", sdkVersion: "0.18.0", capabilities: [TOOL_GATES_CAPABILITY] },

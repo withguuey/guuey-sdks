@@ -179,7 +179,14 @@ def _outcome(call: Callable[[], _Result]) -> JsonObject:
     if value is None:
         return {"returned": "undefined"}
     wire = _as_json(value)
-    return {"ok": wire, "line": js_json_stringify(wire)}
+    line = js_json_stringify(wire)
+    # The golden file holds the JS outcome AS JSON.stringify WROTE IT, so a non-finite number there is null (JSON has no
+    # Infinity). Compare the Python value through the same serialization, never its raw form: inf vs null would be a
+    # difference of the corpus's carrier, not of the parse. `line` still pins the exact bytes.
+    carried = js_json_try_parse(line)
+    if isinstance(carried, JsonSyntaxFailure):
+        raise AssertionError(f"the Python outcome does not round-trip as JSON: {line[:80]}")
+    return {"ok": carried, "line": line}
 
 
 class _GoldenCase(unittest.TestCase):
