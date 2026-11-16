@@ -28,6 +28,15 @@ autoInstallPeers: false
 # auto-install.
 verifyDepsBeforeRun: false
 
+# pnpm checks the registry for a newer pnpm (at most once a day, on install
+# and add). It reads this setting only from the nearest pnpm-workspace.yaml
+# or a pnpm_config_* environment variable, never from .npmrc or npm_config_*.
+# Any install that resolves THIS workspace (the oss child install, the
+# mirror's CI and release jobs) needs it here, since the monorepo root's
+# copy does not reach it. The pin is packageManager in package.json; a
+# version move is a deliberate bump, never a prompt. Not a lockfile setting.
+updateNotifier: false
+
 allowBuilds:
   "@anthropic-ai/claude-agent-sdk": false
   sqlite3: false
