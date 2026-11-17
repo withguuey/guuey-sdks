@@ -124,6 +124,16 @@ per-request federated identity. (`hosted` entries deploy to the platform's
 federated URLs; locally they need a `devPort` pointing at a server you run
 yourself, or they're skipped with a warning.)
 
+**Resuming a conversation (claude-agent-sdk template).** Deployed, the
+platform names the saved Claude session a conversation continues, and
+`src/worker.ts` hands it to the SDK through `emit.claudeSession`; locally
+nothing is resumed, and each turn carries its history as before. The checks in
+that call keep an honest worker's conversation intact, but they are not what
+keeps conversations apart: the platform isolates each conversation's saved
+session itself. Changing that code can only affect your own conversation:
+run the CLI from another folder and it starts fresh, or skip the call and
+nothing is resumed.
+
 ## Deploying
 
 ```bash

@@ -22,7 +22,7 @@ import {
 } from "@guuey/worker";
 import { isBoundRoot, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 import { buildOptions, claudeTurnContext } from "./claude-options.js";
-import { hashSystemPrompt, hashUserBlocks, hashUserText } from "./cli-session-hash.js";
+import { hashSystemPrompt, hashUserBlocks, hashUserText } from "@guuey/worker";
 
 const SESSION = mkdtempSync(join(tmpdir(), "host-cli-session-"));
 afterAll(() => rmSync(SESSION, { recursive: true, force: true }));

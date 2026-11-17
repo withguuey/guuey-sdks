@@ -78,6 +78,32 @@ export {
 } from "./parse.js";
 export { INPUT_KINDS, type InputKind, isInputKind, inputKindCapability } from "./protocol.js";
 export { compareStoredSession, type CliSessionRecord, type CliSessionRefusal, type CliSessionVerdict } from "./cli-session-compare.js";
+// guuey#3550: thread resume for a Claude CLI turn. ONE sequence, run by @guuey/host's Claude framework and by a builder
+// worker (serveNative's claudeSession), so both sides of the Router's compare hash alike. Public on purpose, and kept
+// small: the sequence, its id check, its refusal texts, the config-root variable's name, the types a builder's turn
+// names, and the three content hashes a caller's tests compare against. The measure, the canonical forms and the gate
+// stay internal.
+export { hashSystemPrompt, hashUserBlocks, hashUserText } from "./cli-session-hash.js";
+export {
+  CLI_SESSION_CWD_MISSING,
+  CLI_SESSION_NO_OWN_TEXT,
+  CLI_SESSION_PATH_TOO_LONG,
+  type ClaudeSessionHeader,
+  type ClaudeSessionServer,
+} from "./claude-session-block.js";
+export {
+  CLAUDE_CLI_CONFIG_DIR_ENV,
+  CLI_SESSION_ID_NOT_UUID,
+  CLI_SESSION_PROMPT_NOT_STRING,
+  applyClaudeSession,
+  cliSessionIdProblem,
+  cliSessionNotAppliedMessage,
+  type AppliedClaudeSession,
+  type ClaudeSessionMessage,
+  type ClaudeSessionTurn,
+  type WorkerClaudeSession,
+  type WorkerClaudeSessionTurn,
+} from "./claude-session.js";
 export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
 export { invokeImagesCapabilities, isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 export {

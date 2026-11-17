@@ -15,7 +15,9 @@ import {
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
   TOOL_GATES_CAPABILITY,
   anthropicUserContent,
+  cliSessionNotAppliedMessage,
   makeClaudeSpawner,
+  modelInputOf,
   readLaunchEnvelope,
   serveNative,
   type ClaudeKeyKind,
@@ -134,6 +136,26 @@ await serveNative(
     // A denylist entry that cannot be read makes the rules keep no MCP tool
     // this turn (they fail closed); name it so it can be fixed.
     for (const error of toolRules.errors) console.error(`[guuey] ${error}`);
+    // The agent configuration this turn hands the SDK (see the posture notes on `query()` below).
+    const agentOptions = {
+      ...(agent.model ? { model: agent.model } : {}),
+      allowedTools: toolRules.allowedTools,
+      ...(toolRules.disallowedTools.length > 0 ? { disallowedTools: toolRules.disallowedTools } : {}),
+      canUseTool: toolRules.canUseTool,
+      tools: [],
+    };
+    const prompt = systemPrompt(invoke, agent);
+    // guuey#3550: continue the conversation's own CLI session when the platform names one. A resumed invoke carries no
+    // history (the session holds it), so its message has none; a resume this worker cannot apply throws, and the
+    // platform re-runs the turn as a start with its history. `claudeSession` sends the turn's hello, so it is called
+    // before anything is emitted. An empty prompt passes no system prompt to query(), so it cannot resume either.
+    const resumes = invoke.cliSession?.mode === "resume";
+    const content = anthropicUserContent(invoke, resumes ? modelInputOf(invoke) : withHistory(invoke));
+    const session = emit.claudeSession?.({ systemPrompt: prompt || undefined, header: agentOptions, servers: mcpServers, content });
+    // An emit without claudeSession (not serveNative's) cannot continue a session, and a resume has no history to run with.
+    if (resumes && session === undefined) throw new Error(cliSessionNotAppliedMessage("this serve loop has no claudeSession"));
+    // Set when the CLI's first message does not confirm the session: the turn's error, and nothing is forwarded.
+    let resumeFailed: string | undefined;
     let openGate!: () => void;
     const gate = new Promise<void>((resolve) => (openGate = resolve));
     let endInput!: () => void;
@@ -141,18 +163,18 @@ await serveNative(
     // The one user message goes out only once the MCP gate below decided; a
     // failed startup opens the gate with `send` still false, so none is sent.
     let send = false;
-    async function* prompt(): AsyncGenerator<SDKUserMessage> {
+    async function* userMessages(): AsyncGenerator<SDKUserMessage> {
       await gate;
       if (!send) return;
-      // The turn's images (if any) as image blocks, then the text.
-      yield { type: "user", message: { role: "user", content: anthropicUserContent(invoke, withHistory(invoke)) }, parent_tool_use_id: null };
+      // The turn's images (if any) as image blocks, then the text: the same blocks the hello hashed.
+      yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null };
       await inputDone;
     }
     const q = query({
-      prompt: prompt(),
+      prompt: userMessages(),
       options: {
-        ...(agent.model ? { model: agent.model } : {}),
-        ...(systemPrompt(invoke, agent) ? { systemPrompt: systemPrompt(invoke, agent) } : {}),
+        ...agentOptions,
+        ...(prompt ? { systemPrompt: prompt } : {}),
         // Same posture as `@guuey/host`'s `buildOptions` (options.ts):
         // - allowedTools: the allowlist translated into SDK rules, else every
         //   tool of every server (`mcp__<server>`); an allow rule only
@@ -169,17 +191,14 @@ await serveNative(
         //   Code MCPs/plugins would leak into the tool catalog).
         // - strictMcpConfig: true — the snapshot's servers only; ignore
         //   .mcp.json / user settings / plugins.
-        allowedTools: toolRules.allowedTools,
-        ...(toolRules.disallowedTools.length > 0 ? { disallowedTools: toolRules.disallowedTools } : {}),
-        canUseTool: toolRules.canUseTool,
-        tools: [],
         settingSources: [],
         strictMcpConfig: true,
-        // - persistSession: false — the worker never resumes a CLI session
-        //   (each turn's thread arrives in `invoke.history`), and a persisted
-        //   transcript lands under $HOME/.claude/projects/. Hosted, $HOME is
-        //   the end user's DURABLE home, so the default would keep every
-        //   turn's text there across sessions and pods.
+        // - persistSession: false — without a platform session (above), each
+        //   turn's thread arrives in `invoke.history`, and a persisted
+        //   transcript would land under $HOME/.claude/projects/. Hosted, $HOME
+        //   is the end user's DURABLE home, so the default would keep every
+        //   turn's text there across sessions and pods. With a session, the
+        //   platform's config root keeps it instead (`session.options` below).
         persistSession: false,
         // - includePartialMessages: true — token streaming. Without it the SDK
         //   yields each assistant message only when it is complete, so the end
@@ -188,17 +207,30 @@ await serveNative(
         //   deltas, deduped against the complete message that follows. Same
         //   posture as `@guuey/host` (frameworks/claude-options.ts).
         includePartialMessages: true,
-        env: cliEnv(),
+        env: { ...cliEnv(), ...session?.env },
         ...(credential !== undefined
           ? { spawnClaudeCodeProcess: makeClaudeSpawner({ ...credential, secrets: headerValues }) }
           : {}),
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
         ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
+        // The session id, persistSession: true and the platform's own CLI binary, the one the session file belongs to.
+        ...session?.options,
       },
     });
     let result = "";
     const messages = (async () => {
+      let confirmed = session === undefined;
       for await (const message of q) {
+        if (!confirmed) {
+          resumeFailed = session?.confirmFirst(message);
+          if (resumeFailed !== undefined) {
+            endInput();
+            openGate();
+            q.close();
+            return;
+          }
+          confirmed = true;
+        }
         emit.native(JSON.parse(JSON.stringify(message)));
         if (message.type === "result") {
           if (message.subtype === "success") result = message.result;
@@ -221,12 +253,17 @@ await serveNative(
       q.close();
       // The setup error is the turn's error; the stream's own end is awaited, not reported.
       await Promise.allSettled([messages]);
-      throw err;
+      throw resumeFailed !== undefined ? new Error(resumeFailed) : err;
+    }
+    if (resumeFailed !== undefined) {
+      await Promise.allSettled([messages]);
+      throw new Error(resumeFailed);
     }
     send = true;
     openGate();
     await messages;
     endInput();
+    if (resumeFailed !== undefined) throw new Error(resumeFailed);
     return result;
   },
   {
@@ -240,5 +277,7 @@ await serveNative(
     // The turn's images reach the model (anthropicUserContent above) and are
     // stored in the turn's session storage, so the hello says so.
     images: true,
+    // The hello waits for `emit.claudeSession` above, so it can carry the session's block (guuey#3550).
+    claudeSession: true,
   }
 );

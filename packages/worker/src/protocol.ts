@@ -538,9 +538,9 @@ export interface WorkerHelloEvent {
 export const CLI_SESSION_CAPABILITY = "cli-session.v1";
 
 /**
- * The form of `@guuey/host`'s one content hash (`cli-session-hash.ts`): which fields of which blocks, in which
- * order, length-prefixed how. Bumped whenever that form changes, so a Router comparing values of two forms
- * resets the thread benignly instead of reading the change as a tamper.
+ * The form of `@guuey/worker`'s one content hash (`cli-session-hash.ts`, shared with `@guuey/host`): which fields
+ * of which blocks, in which order, length-prefixed how. Bumped whenever that form changes, so a Router comparing
+ * values of two forms resets the thread benignly instead of reading the change as a tamper.
  */
 export const CLI_SESSION_HASH_VERSION = 1;
 
@@ -569,9 +569,12 @@ export const SDK_SESSION_PROMPT_SHAS_MAX = 256;
 export const SDK_SESSION_IDS_MAX = 16;
 
 /**
- * The `error` event's message prefix when a `resume` could not be confirmed: the CLI did not open the session the Router
- * named (its first message was not the `init` of that id), so nothing was forwarded. The host never falls back on its
- * own; the Router resets the thread (`resume-failed`) and re-runs the turn once as a `start`.
+ * The `error` event's message prefix when a `resume` could not be confirmed or applied: the CLI did not open the
+ * session the Router named (its first message was not the `init` of that id), the stored session did not match the
+ * platform's record, or the worker could not apply it. Nothing of the turn was forwarded, and the host never falls back
+ * on its own. A resume whose FIRST hello lacks {@link CLI_SESSION_CAPABILITY} is reset by the Router at that hello and
+ * re-run as a `start`, whatever the error says; after a hello that announced it, a Router that maps this prefix to a
+ * `resume-failed` reset does the same, and one that does not ends the turn as failed.
  */
 export const CLI_SESSION_RESUME_FAILED = "cli_session_resume_failed";
 

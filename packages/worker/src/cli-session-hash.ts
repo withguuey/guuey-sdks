@@ -16,7 +16,8 @@
  * resets the thread benignly instead of reading the change as a tamper.
  */
 import { createHash } from "node:crypto";
-import { isInvokeImageMimeType, type AnthropicUserBlock } from "@guuey/worker";
+import { isInvokeImageMimeType } from "./images.js";
+import type { AnthropicUserBlock } from "./image-parts.js";
 
 /** sha256 over length-prefixed fields: each field is its 4-byte big-endian byte length, then its bytes. */
 export function sha256OfFields(fields: readonly string[]): string {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AnthropicUserBlock } from "@guuey/worker";
+import type { AnthropicUserBlock } from "./image-parts.js";
 import { describe, expect, it } from "vitest";
 import { hashUserBlocks, hashUserText, parseStoredUserContent, sha256OfFields } from "./cli-session-hash.js";
 

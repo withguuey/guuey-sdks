@@ -9,7 +9,7 @@
  * worker entrypoint (`index.ts`) passes the real `@anthropic-ai/claude-agent-sdk`
  * `query`.
  */
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -29,21 +29,17 @@ import type { CredentialFile,
   JsonValue,
   ProfileSection,
   StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment,
-  AnthropicUserBlock, HelloCliSession, HelloHeaderShas, InvokeCliSession } from "@guuey/worker";
+  AnthropicUserBlock, AppliedClaudeSession, HelloCliSession, InvokeCliSession } from "@guuey/worker";
 import {
   anthropicUserContent,
+  applyClaudeSession,
   CLAUDE_CLI_FIXED_ROOT,
   CLAUDE_CLI_ROOT_ENV,
   CLI_SESSION_CAPABILITY,
-  CLI_SESSION_HASH_VERSION,
-  CLI_SESSION_RESUME_FAILED,
-  compareStoredSession,
-  type CliSessionVerdict,
+  cliSessionIdProblem,
   invokeImagesCapabilities,
   storeTurnImages,
 } from "@guuey/worker";
-import { hashSystemPrompt, hashUserBlocks, hashUserText, sha256OfFields } from "./cli-session-hash.js";
-import { measureStoredSession } from "./cli-session-store.js";
 import {
   buildOptions,
   claudeTurnContext,
@@ -376,10 +372,12 @@ export async function runInvoke(
   }
 
   // B3 (R5): the session id is the Router's, and only a UUID is run. The host
-  // never derives one (R4), and a malformed id stops here, before any spawn.
-  if (session !== undefined && !UUID.test(session.id)) {
+  // never derives one (R4), and a malformed id stops here, before any spawn or
+  // state root (@guuey/worker's one check; applyClaudeSession repeats it).
+  const idProblem = session !== undefined ? cliSessionIdProblem(session) : undefined;
+  if (idProblem !== undefined) {
     hello();
-    emit.error(`@guuey/host: cliSession.id must be a UUID (got ${JSON.stringify(session.id.slice(0, 80))}).`);
+    emit.error(idProblem);
     return;
   }
 
@@ -583,8 +581,6 @@ function discardSpare(parked: ParkedSpare, why: string): void {
   removeCliRoot(parked.root);
 }
 
-/** A UUID in its canonical text form (any version): the only session id the host runs (B3 R5). */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The bound thread directory's path under the fixed root, as the jail makes it (B3 §2; `-session` is the CLI's name for cwd `/session`). */
 const BOUND_TREE = ["config", "projects", "-session"] as const;
@@ -669,7 +665,7 @@ async function runClaudeTurn(
   let ctx: BuildOptionsContext;
   let turnContext: string[];
   let content: AnthropicUserBlock[];
-  let block: HelloCliSession | undefined;
+  let applied: AppliedClaudeSession | undefined;
   try {
     ctx = turnOptionsContext(invoke, runtime, cliDirs);
     options = buildOptions(snapshot, ctx);
@@ -681,34 +677,31 @@ async function runClaudeTurn(
     // block, then the invoke's own content (its images, then its text) unchanged.
     content = [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke)];
     if (session !== undefined) {
-      // B3 (R2, R3): `start` creates the session under the Router's id, `resume`
-      // continues it; never both, and never a fork.
-      options = session.mode === "start" ? { ...options, sessionId: session.id } : { ...options, resume: session.id };
-      block = cliSessionBlock(options, resolveMcpServers(ctx), content, session, invoke.fs, cliDirs);
+      // B3: @guuey/worker's one sequence (guuey#3550). It sends the hello with
+      // the block (R-1: the only frame the Router takes these values from),
+      // then checks a resume that carries the platform's record against the
+      // measures that hello reported, before the CLI starts (6a F1): a refused
+      // file is never loaded and nothing reaches the model. `start` creates the
+      // session under the Router's id, `resume` continues it (R2, R3).
+      applied = applyClaudeSession({
+        session,
+        systemPrompt: options.systemPrompt,
+        header: options,
+        servers: resolveMcpServers(ctx),
+        content,
+        configDir: cliDirs.config,
+        cwd: invoke.fs.session,
+        hello,
+      });
+      options = { ...options, ...applied.options };
     }
   } catch (err) {
     hello();
     emit.error(err instanceof Error ? err.message : String(err));
     return;
   }
-  // B3: the turn's first event, when it carried `cliSession` (R-1: the only
-  // frame the Router takes these values from).
-  hello(block);
-  // guuey#3407 6a (F1): a resume that carries the platform's record is checked
-  // HERE, against the measures the hello just reported, before the CLI starts:
-  // a refused file is never loaded and nothing reaches the model. This is the
-  // cooperative half; the platform's own comparison on the hello gates the turn.
-  if (session?.mode === "resume" && session.expectLastPromptSha !== undefined) {
-    const stored = block?.stored;
-    const verdict: CliSessionVerdict =
-      stored === undefined
-        ? { ok: false, reason: "unreadable" }
-        : compareStoredSession({ id: session.id, lastPromptSha: session.expectLastPromptSha }, stored);
-    if (!verdict.ok) {
-      emit.error(`${CLI_SESSION_RESUME_FAILED}: refused (${verdict.reason})`);
-      return;
-    }
-  }
+  // The turn's first event when it carried no `cliSession` (a no-op otherwise).
+  hello();
   // The platform-owned names buildOptions left out of the agent's environment,
   // reported on stderr (names only) so the drop is never silent.
   const droppedEnv = reservedEnvNamesDropped(snapshot);
@@ -765,21 +758,20 @@ async function runClaudeTurn(
   // sent; R7b measured that every failure face (missing, empty, unreadable,
   // a directory) ends in an error result with no `init` first. Anything else
   // ends the turn with CLI_SESSION_RESUME_FAILED and forwards nothing: the host
-  // never falls back on its own, the Router resets and re-runs once.
+  // never falls back on its own; what the Router does with the error is its own (see CLI_SESSION_RESUME_FAILED).
   let resumeFailed: string | undefined;
   const messages = (async (): Promise<void> => {
-    let confirmed = session?.mode !== "resume";
+    let confirmed = applied === undefined;
     for await (const msg of q) {
       if (!confirmed) {
-        if (isInitOf(msg, session?.id)) {
-          confirmed = true;
-        } else {
-          resumeFailed = describeFirstMessage(msg);
+        resumeFailed = applied?.confirmFirst(msg);
+        if (resumeFailed !== undefined) {
           endInput();
           openGate();
           q.close();
           return;
         }
+        confirmed = true;
       }
       emit.native(CLAUDE_FRAMEWORK, toJson(msg));
       if (isResultMessage(msg)) {
@@ -811,12 +803,12 @@ async function runClaudeTurn(
     openGate();
     q.close();
     await streamOutcome;
-    emit.error(resumeFailed !== undefined ? resumeFailedMessage(resumeFailed) : err instanceof Error ? err.message : String(err));
+    emit.error(resumeFailed ?? (err instanceof Error ? err.message : String(err)));
     return;
   }
   if (resumeFailed !== undefined) {
     await streamOutcome;
-    emit.error(resumeFailedMessage(resumeFailed));
+    emit.error(resumeFailed);
     return;
   }
   sendMessage = true;
@@ -824,7 +816,7 @@ async function runClaudeTurn(
   const failure = await streamOutcome;
   endInput();
   if (resumeFailed !== undefined) {
-    emit.error(resumeFailedMessage(resumeFailed));
+    emit.error(resumeFailed);
     return;
   }
   if (failure !== undefined) {
@@ -917,22 +909,6 @@ async function claimSpare(
   }
 }
 
-/** The `error` message of an unconfirmed resume: the protocol's prefix, then what the CLI said first. */
-function resumeFailedMessage(firstMessage: string): string {
-  return `${CLI_SESSION_RESUME_FAILED}: the CLI's first message was ${firstMessage}, not the init of the session sent`;
-}
-
-/** Whether an SDK message is the `system`/`init` of exactly this session id. */
-function isInitOf(msg: SDKMessage, id: string | undefined): boolean {
-  return msg.type === "system" && msg.subtype === "init" && id !== undefined && msg.session_id === id;
-}
-
-/** A short, content-free description of an SDK message, for the resume-failed error. */
-function describeFirstMessage(msg: SDKMessage): string {
-  const subtype = "subtype" in msg && typeof msg.subtype === "string" ? `/${msg.subtype}` : "";
-  return `${msg.type}${subtype}`;
-}
-
 /** Sends the invoke's hello at most once (see `runInvoke`); a block adds the thread-resume capability. */
 type HelloOnce = (block?: HelloCliSession) => void;
 
@@ -948,68 +924,6 @@ function helloOnce(emit: Emitter, capabilities: readonly string[]): HelloOnce {
       block === undefined ? capabilities : [...capabilities, CLI_SESSION_CAPABILITY],
       block,
     );
-  };
-}
-
-/**
- * The CLI's directory name for a cwd (R7a, measured on 2.1.282 and read in its bundle): the cwd's real path with every
- * character outside `[a-zA-Z0-9]` turned into `-`. `/session` gives `-session`. The CLI shortens a name over 200
- * characters with a hash this host does not reproduce, so such a cwd refuses rather than measuring the wrong file.
- */
-export function cliProjectSlug(cwd: string): string {
-  const slug = realpathSync(cwd).replace(/[^a-zA-Z0-9]/g, "-");
-  if (slug.length > 200) throw new Error("@guuey/host: the session directory's path is too long to resume a CLI session in");
-  return slug;
-}
-
-/** The hello's thread-resume block for this turn (B3 v1.9, wire v1.2), with the stored measures on a resume. */
-function cliSessionBlock(
-  options: Options,
-  servers: Record<string, McpServerConfig>,
-  content: readonly AnthropicUserBlock[],
-  session: InvokeCliSession,
-  fs: Fs,
-  cliDirs: CliDirs,
-): HelloCliSession {
-  const own = content[content.length - 1];
-  if (own === undefined || own.type !== "text") throw new Error("@guuey/host: the turn's message must end with its own text block");
-  if (typeof options.systemPrompt !== "string") throw new Error("@guuey/host: the system prompt must be one string to resume a CLI session");
-  const promptBytes = content.reduce((n, b) => n + (b.type === "text" ? Buffer.byteLength(b.text, "utf8") : 0), 0);
-  return {
-    hashVersion: CLI_SESSION_HASH_VERSION,
-    systemPromptSha256: hashSystemPrompt(options.systemPrompt),
-    headerShas: headerShas(options, servers),
-    promptSha: hashUserBlocks(content),
-    promptBytes,
-    lastPromptSha: hashUserText(own.text),
-    ...(session.mode === "resume"
-      ? { stored: measureStoredSession(join(cliDirs.config, "projects", cliProjectSlug(fs.session)), session.id) }
-      : {}),
-  };
-}
-
-/**
- * One sha per agent-configuration field passed to the SDK (B-3; all four are `agent-config`-only, B3 v1.8 item 3).
- * Each is a fixed canonical form: sorted names, the MCP servers by name with their transport and URL, never a header.
- */
-function headerShas(options: Options, servers: Record<string, McpServerConfig>): HelloHeaderShas {
-  const list = (v: readonly string[] | undefined): string[] => [...(v ?? [])].sort();
-  const tools = Array.isArray(options.tools) ? options.tools : [];
-  return {
-    model: sha256OfFields(["model", options.model ?? ""]),
-    permissionMode: sha256OfFields(["permissionMode", options.permissionMode ?? (options.canUseTool !== undefined ? "canUseTool" : "")]),
-    tools: sha256OfFields([
-      "tools", ...list(tools),
-      "allowed", ...list(options.allowedTools),
-      "disallowed", ...list(options.disallowedTools),
-    ]),
-    mcpConfig: sha256OfFields([
-      "mcp",
-      ...Object.keys(servers).sort().flatMap((name) => {
-        const s = servers[name];
-        return [name, "type" in s && typeof s.type === "string" ? s.type : "", "url" in s && typeof s.url === "string" ? s.url : ""];
-      }),
-    ]),
   };
 }
 

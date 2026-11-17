@@ -15,11 +15,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { applyAgentMode, type GuueyAgent } from "@guuey/config";
-import type { ClaudeSpawnRequest, ClaudeSpawnedProcess, Invoke, NativeEmit, NativeHandler, WithheldTool, NativeServeInfo } from "@guuey/worker";
+import type {
+  ClaudeSpawnRequest,
+  ClaudeSpawnedProcess,
+  Invoke,
+  NativeEmit,
+  NativeHandler,
+  WithheldTool,
+  NativeServeInfo,
+  WorkerClaudeSessionTurn,
+} from "@guuey/worker";
 
 /** The slice of the SDK's query options this test reads. */
 interface CapturedOptions {
   env?: Record<string, string>;
+  resume?: string;
+  sessionId?: string;
+  pathToClaudeCodeExecutable?: string;
   mcpServers?: object;
   persistSession?: boolean;
   includePartialMessages?: boolean;
@@ -35,6 +47,8 @@ interface CapturedQuery {
   setMcpServers: Array<Record<string, { headers?: Record<string, string> }>>;
   promptPulledAfterSet: boolean;
   messageSent: boolean;
+  /** The user message's content blocks, as the CLI received them. */
+  content: Array<{ type: string; text?: string }>;
   closed: boolean;
 }
 
@@ -44,15 +58,18 @@ const h = vi.hoisted(() => ({
   queries: [] as CapturedQuery[],
   /** `hang`: the CLI never answers `setMcpServers` (a CLI that started but answers nothing). */
   mode: "answer" as "answer" | "hang",
+  /** When set, the CLI's first message is the `system`/`init` of this session id (guuey#3550). */
+  initId: undefined as string | undefined,
 }));
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: (params: { prompt: AsyncIterable<object>; options: CapturedOptions }) => {
+  query: (params: { prompt: AsyncIterable<{ message: { content: CapturedQuery["content"] } }>; options: CapturedOptions }) => {
     const captured: CapturedQuery = {
       options: params.options,
       setMcpServers: [],
       promptPulledAfterSet: false,
       messageSent: false,
+      content: [],
       closed: false,
     };
     h.queries.push(captured);
@@ -67,8 +84,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
         captured.closed = true;
       },
       async *[Symbol.asyncIterator]() {
-        for await (const _message of params.prompt) {
+        for await (const message of params.prompt) {
           captured.messageSent = true;
+          captured.content = message.message.content;
+          if (h.initId !== undefined) yield { type: "system", subtype: "init", session_id: h.initId };
           captured.promptPulledAfterSet = captured.setMcpServers.length === 1;
           yield { type: "result", subtype: "success", result: "ok" };
         }
@@ -300,5 +319,103 @@ describe("Claude template worker: declares the input kinds its text path handles
     // The input kinds, then tool-gates.v1 (guuey#2670): nothing else.
     expect(h.info?.capabilities).toEqual([...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY]);
     expect(h.info?.capabilities).toEqual([inputKindCapability("context-only"), "tool-gates.v1"]);
+  });
+});
+
+/**
+ * guuey#3550: the template continues the conversation's own CLI session when the platform names one. serveNative's
+ * `claudeSession` is @guuey/worker's (pinned in its own tests); here a stand-in answers it, and the test reads what the
+ * worker hands it and what reaches `query()`.
+ */
+describe("Claude template worker: thread resume (guuey#3550)", () => {
+  const ID = "6f9619ff-8b86-4011-b42d-00c04fc964ff";
+  const HISTORY = "an earlier turn the Router replayed";
+  const block = {
+    hashVersion: 1,
+    systemPromptSha256: "s",
+    headerShas: { model: "m", permissionMode: "p", tools: "t", mcpConfig: "c" },
+    promptSha: "p",
+    promptBytes: 5,
+    lastPromptSha: "l",
+  };
+  const resumeInvoke = (): Invoke => ({
+    ...invokeWithServer(),
+    history: [{ role: "user", text: HISTORY }],
+    cliSession: { mode: "resume", id: ID },
+  });
+  /** An emit whose claudeSession applies a resume (or nothing), recording the turn the worker described. */
+  function sessionEmit(applies: boolean) {
+    const turns: WorkerClaudeSessionTurn[] = [];
+    const natives: unknown[] = [];
+    const scoped: NativeEmit = {
+      ...emit,
+      native: (event) => natives.push(event),
+      claudeSession: (turn) => {
+        turns.push(turn);
+        if (!applies) return undefined;
+        return {
+          options: { resume: ID, persistSession: true, pathToClaudeCodeExecutable: "/opt/platform/claude" },
+          env: { CLAUDE_CONFIG_DIR: "/home/.claude" },
+          block,
+          confirmFirst: (msg) =>
+            msg.type === "system" && msg.subtype === "init" && msg.session_id === ID ? undefined : `cli_session_resume_failed: ${msg.type}`,
+        };
+      },
+    };
+    return { scoped, turns, natives };
+  }
+  const texts = (content: ReadonlyArray<{ type: string; text?: string }>): string =>
+    content.map((b) => (b.type === "text" ? (b.text ?? "") : "")).join("\n");
+
+  it("opts in: its serve info holds the hello for the session's block", () => {
+    expect(h.info?.claudeSession).toBe(true);
+  });
+
+  it("applied: the platform's binary, persistence and config root reach query(); the message carries no history", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    const { scoped, turns } = sessionEmit(true);
+    h.initId = ID;
+    try {
+      expect(await h.handler(resumeInvoke(), scoped)).toBe("ok");
+    } finally {
+      h.initId = undefined;
+    }
+    const q = h.queries.at(-1);
+    if (q === undefined) throw new Error("no query");
+    expect(q.options).toMatchObject({ resume: ID, persistSession: true, pathToClaudeCodeExecutable: "/opt/platform/claude" });
+    expect(q.options.env?.CLAUDE_CONFIG_DIR).toBe("/home/.claude");
+    expect(texts(q.content)).not.toContain(HISTORY);
+    // The blocks the hello hashed are the blocks the CLI received, and the header is what query() was given.
+    expect(turns[0]?.content).toEqual(q.content);
+    expect(turns[0]?.header).toMatchObject({ allowedTools: q.options.allowedTools, tools: [] });
+  });
+
+  it("applied, but the CLI's first message is not the session's init: the turn fails and nothing is forwarded", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    const { scoped, natives } = sessionEmit(true);
+    await expect(Promise.resolve(h.handler(resumeInvoke(), scoped))).rejects.toThrow("cli_session_resume_failed: result");
+    expect(natives).toEqual([]);
+  });
+
+  it("a start not applied: the turn runs as before, with the history and without persistence", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    const { scoped, turns } = sessionEmit(false);
+    expect(await h.handler({ ...resumeInvoke(), cliSession: { mode: "start", id: ID } }, scoped)).toBe("ok");
+    const q = h.queries.at(-1);
+    if (q === undefined) throw new Error("no query");
+    expect(turns).toHaveLength(1);
+    expect(q.options.persistSession).toBe(false);
+    expect(q.options.resume).toBeUndefined();
+    expect(q.options.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(texts(q.content)).toContain(HISTORY);
+  });
+
+  it("a resume on an emit without claudeSession refuses: a resumed invoke has no history to answer from", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    const before = h.queries.length;
+    await expect(Promise.resolve(h.handler(resumeInvoke(), emit))).rejects.toThrow(
+      "cli_session_resume_failed: not applied (this serve loop has no claudeSession)",
+    );
+    expect(h.queries.length).toBe(before);
   });
 });

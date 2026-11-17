@@ -15,7 +15,7 @@
  */
 import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HelloStoredMeasures, HelloWalk, JsonValue } from "@guuey/worker";
+import type { HelloStoredMeasures, HelloWalk, JsonValue } from "./protocol.js";
 import { hashSystemPrompt, hashUserBlocks, hashUserText, parseStoredUserContent } from "./cli-session-hash.js";
 
 /** The line types the pinned CLI writes in a session file. Any other is unclassified. */
