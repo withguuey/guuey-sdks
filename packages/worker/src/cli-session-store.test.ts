@@ -1,9 +1,15 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashSystemPrompt, hashUserBlocks, hashUserText } from "./cli-session-hash.js";
 import { measureStoredSession } from "./cli-session-store.js";
+
+// Real files in a temp dir, read back synchronously: each case takes milliseconds, but a loaded CI runner has stalled
+// one past vitest's 5 s default (the C-1 case at 8338 ms while its siblings took 0-9 ms). An
+// explicit budget, as the other file-backed tests here carry (guuey#867). It hides no hang: every walk stops at a
+// revisited uuid, and a synchronous loop is never cut short by any test timeout.
+vi.setConfig({ testTimeout: 30_000 });
 
 /**
  * Session files shaped as the pinned CLI (2.1.282) writes them, per R7h's measures and its compaction read: synthetic
