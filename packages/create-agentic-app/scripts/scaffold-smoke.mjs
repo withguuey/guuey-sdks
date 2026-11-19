@@ -80,10 +80,10 @@ try {
 
     // 6. Every bin `scripts/dev.mjs` execs must resolve from DECLARED deps —
     // the missing-bin class breaks `pnpm dev` on every fresh scaffold while
-    // install/typecheck/build stay green (the @ggui-ai/cli gap, guuey#279).
+    // install/typecheck/build stay green.
     // A resolution check is deterministic where a full dev-stack boot in CI
     // would be flaky; `pnpm exec` fails loudly when the bin has no provider.
-    for (const bin of ["ggui", "guuey", "tsup"]) {
+    for (const bin of ["guuey", "tsup"]) {
       sh("corepack", [SCAFFOLD_PNPM, "exec", bin, "--version"], { cwd: appDir });
     }
     sh("corepack", [SCAFFOLD_PNPM, "-r", "typecheck"], { cwd: appDir }); // workspace packages (mcps/*, web)

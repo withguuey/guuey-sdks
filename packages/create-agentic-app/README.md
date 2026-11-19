@@ -23,8 +23,7 @@ pnpm bootstrap -- --link   # bind the deployed app into the frontend
   scaled to zero when idle.
 - **A hosted MCP server template** (`mcps/todo`) — your agent's tools, built
   and hosted by `guuey deploy` alongside the agent.
-- **`guuey.json`** — the single config file describing the agent, its MCP
-  servers, and its ggui generative-UI assets.
+- **`guuey.json`** — the single config file describing the agent and its MCP servers.
 
 ## Options
 

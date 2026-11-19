@@ -1800,7 +1800,7 @@ export function isGguiRenderUrl(url: string): boolean {
 
 /**
  * Whether the platform default ({@link DEFAULT_AGENT_MCP_SERVERS}) is seeded
- * for one app (guuey#3361, the retirement input of #3335). `seedGgui` absent
+ * for one app (guuey#3361). `seedGgui` absent
  * means seeded, exactly as before the option existed; `false` seeds nothing and
  * leaves the declared map alone. The caller decides: the Router seeds an app
  * only while it holds a ggui binding.
