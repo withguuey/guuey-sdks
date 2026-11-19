@@ -1,27 +1,20 @@
 # agentic-app-template
 
 A guuey agentic app: a code-mode agent, a custom MCP server you can copy to
-add your own tools, and a `ggui` config for generative UI — all runnable
-locally with one command, and deployable to guuey with one more.
+add your own tools, and a web frontend — all runnable locally with one
+command, and deployable to guuey with one more.
 
 ## What got scaffolded
 
 ```
 .
 ├── guuey.json          # the deploy contract: agent framework/model, system prompt,
-│                        #   mcpServers (name → colocated source + devPort), ggui config
+│                        #   mcpServers (name → colocated source + devPort)
 ├── package.json         # agent deps + the pnpm workspace root (workspaces: mcps/*, web)
 ├── src/worker.ts        # your agent code (code-mode worker); build emits ./guuey.worker.js
 ├── prompts/system.md    # system prompt, referenced from guuey.json#agent.systemPrompt.file
 ├── mcps/todo/           # the "copy-me" custom MCP server — @modelcontextprotocol/sdk,
 │                         #   Streamable HTTP, in-memory todo list, port :6782
-├── ggui/                # ggui.json + blueprints/ — generative-UI config. Generative UI is
-│                         #   opt-in: delete `"ggui": false` from guuey.json#agent.mcpServers
-│                         #   to turn it on (it starts off).
-│                         #   `ggui serve` runs against this locally; `guuey deploy` pushes
-│                         #   generation config + blueprints (the deployed RENDER THEME is
-│                         #   platform data, not this dir — ggui.json#theme is local-preview
-│                         #   only, kept in step with guuey.app.json by `PNPM_PLACEHOLDER bootstrap`).
 ├── web/                 # the product frontend (Vite + React on @guuey/chat):
 │                         #   landing (widget) · login (guest + BYO-OIDC seam) · home
 │                         #   (status + distribution guide) · the chat surface
@@ -34,8 +27,7 @@ locally with one command, and deployable to guuey with one more.
 │                         #   managed block with this project's real facts
 ├── scripts/dev.mjs      # `PNPM_PLACEHOLDER dev` orchestrator — boots the whole local stack
 ├── scripts/bootstrap.mjs # `PNPM_PLACEHOLDER bootstrap` — configure, then `-- --link` to bind
-├── .env.example          # ANTHROPIC_API_KEY / OPENAI_API_KEY for local dev
-└── .mcp.json             # Claude Code convenience wiring (mcp.ggui.ai/dev)
+└── .env.example          # ANTHROPIC_API_KEY / OPENAI_API_KEY for local dev
 ```
 
 The project root **is** the agent package — `guuey deploy` packs this directory
@@ -62,15 +54,14 @@ its own keeps it, and the run prints the command that pushes this project's on p
 app state; `PNPM_PLACEHOLDER bootstrap -- --check`
 prints machine-readable configuration state.
 
-`PNPM_PLACEHOLDER dev` (`scripts/dev.mjs`) boots four processes with prefixed, interleaved
+`PNPM_PLACEHOLDER dev` (`scripts/dev.mjs`) boots three processes with prefixed, interleaved
 logs. Ctrl-C tears all of them down together.
 
-| process      | port  | what                                                                                                                                       |
-| ------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `worker`     | —     | `tsup --watch` — rebuilds `guuey.worker.js` on every save                                                                                  |
-| `guuey dev`  | :6790 | local router: spawns your worker per turn, streams SSE; auto-spawns every `colocated` MCP entry — `mcps/todo` lands on its `devPort` :6782 |
-| `ggui serve` | :6781 | local generative-UI server, over `ggui/`                                                                                                   |
-| `web`        | :6890 | the product frontend (landing/login/home/chat on @guuey/chat)                                                                              |
+| process     | port  | what                                                                                                                                       |
+| ----------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worker`    | —     | `tsup --watch` — rebuilds `guuey.worker.js` on every save                                                                                  |
+| `guuey dev` | :6790 | local router: spawns your worker per turn, streams SSE; auto-spawns every `colocated` MCP entry — `mcps/todo` lands on its `devPort` :6782 |
+| `web`       | :6890 | the product frontend (landing/login/home/chat on @guuey/chat)                                                                              |
 
 The todo MCP still answers on :6782 — it's just a supervised child of
 `guuey dev` now (copy `mcps/todo/` to add your own server; new `colocated`
@@ -109,8 +100,6 @@ you should read twice:
   a minimal environment if your agent (or any MCP server it talks to)
   handles untrusted input. In production every invocation runs inside a
   sandboxed pod with only its declared environment.
-- **Permissive auth.** `ggui serve --dev-allow-all` accepts any bearer
-  locally. The deployed ggui instance enforces real auth.
 - **No metering or history.** Local runs aren't billed and aren't persisted.
   Deployed conversations are metered and their history is written to
   DynamoDB so users can resume a thread.
@@ -141,21 +130,19 @@ npx guuey login    # device-flow auth; stores a token in ~/.guuey/auth.json
 npx guuey deploy   # ships everything
 ```
 
-`guuey deploy` runs four legs, in order, so a hard failure aborts before
+`guuey deploy` runs three legs, in order, so a hard failure aborts before
 anything user-visible changes:
 
 1. **MCP leg** — deploys each `hosted` entry under `guuey.json#agent.mcpServers`
    as its own hosted MCP server (build → deploy → registry), then writes the
    resulting server id back into `guuey.json`. This scaffold has none — the
    todo MCP is `colocated`, so this leg is a no-op here.
-2. **ggui asset leg** — pushes `ggui/` (generation config, blueprints) to your
-   app's guuey-managed ggui instance.
-3. **Agent leg** — builds `src/worker.ts` into `guuey.worker.js`, packs the
+2. **Agent leg** — builds `src/worker.ts` into `guuey.worker.js`, packs the
    project root (including `mcps/`), and deploys it as a sandboxed,
    long-running pod. Each `colocated` entry (e.g. `mcps/todo`) is built into
    the worker image and auto-spawned as a supervised, sandboxed child at pod
    boot — no separate server, registry row, or write-back.
-4. **Output** — prints your agent's endpoint URL and a Portal deep link.
+3. **Output** — prints your agent's endpoint URL and a Portal deep link.
 
 Re-running `guuey deploy` converges: unchanged pieces are skipped or reused,
 nothing is duplicated.

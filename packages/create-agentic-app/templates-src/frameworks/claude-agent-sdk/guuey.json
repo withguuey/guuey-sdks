@@ -9,6 +9,5 @@
       "ggui": false,
       "todo": { "kind": "colocated", "source": "./mcps/todo", "devPort": 6782 }
     }
-  },
-  "ggui": { "configFile": "./ggui/ggui.json" }
+  }
 }

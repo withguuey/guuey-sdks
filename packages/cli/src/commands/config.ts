@@ -145,7 +145,9 @@ export function configInit(flags: Record<string, string | true>): void {
   // Scaffold a minimum-viable guuey.json. The `agent` section is required;
   // we populate sensible defaults the user can edit. `prompts/system.md`
   // is referenced but may not exist yet — `guuey deploy` will fail with
-  // a clear error until the user creates it.
+  // a clear error until the user creates it. A new project is born without
+  // generative UI: `ggui: false` opts out of the platform-default server
+  // (guuey#3360), as every create-agentic-app template does.
   const config: ProjectConfigInput = {
     schema: '1',
     ...(appId ? { appId } : {}),
@@ -153,6 +155,7 @@ export function configInit(flags: Record<string, string | true>): void {
       framework: 'claude-agent-sdk',
       model: defaultModelFor('claude-agent-sdk'),
       systemPrompt: { file: 'prompts/system.md' },
+      mcpServers: { ggui: false },
     },
   };
 

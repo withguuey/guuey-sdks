@@ -33,8 +33,6 @@ function project({ framework, envLocal }) {
   const root = mkdtempSync(join(tmpdir(), "caa-dev-"));
   dirs.push(root);
   cpSync(coreScripts, join(root, "scripts"), { recursive: true });
-  // dev.mjs boots ggui with cwd "ggui"; a scaffold always has that directory
-  mkdirSync(join(root, "ggui"));
   writeFileSync(join(root, "guuey.json"), JSON.stringify({ schema: "1", agent: { mode: "declarative", framework } }));
   if (envLocal !== undefined) writeFileSync(join(root, ".env.local"), envLocal);
   mkdirSync(join(root, "node_modules", "@guuey"), { recursive: true });
@@ -92,10 +90,8 @@ describe("pnpm dev: the model key before anything starts", () => {
     expect(calls).toContain("exec tsup");
     expect(calls).toContain("exec tsup --watch");
     expect(calls.some((c) => c.startsWith("exec guuey dev --serve"))).toBe(true);
-    expect(calls.some((c) => c.startsWith("exec ggui serve"))).toBe(true);
-    // guuey#1446: the local ggui runs headless; @ggui-ai/cli 0.28.0's --no-console mints no admin token
-    // and prints neither the console banner nor the ADMIN_TOKEN beacon
-    expect(calls.find((c) => c.startsWith("exec ggui serve"))?.split(" ")).toContain("--no-console");
+    // guuey#3360: a new project runs no local generative-UI server
+    expect(calls.some((c) => c.includes("ggui"))).toBe(false);
     expect(calls.some((c) => c.startsWith("--filter") && c.endsWith(" dev"))).toBe(true);
   });
 

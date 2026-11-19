@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { GUUEY_DEFAULT_SYSTEM_PROMPT } from "@guuey/config";
 
@@ -16,7 +16,6 @@ const SHARED_LAYOUT = [
   "src/agent-config.ts",
   "prompts/system.md",
   "mcps/todo/src/server.ts",
-  "ggui/ggui.json",
   "scripts/dev.mjs",
   "scripts/bootstrap.mjs",
   ".env.example",
@@ -33,6 +32,49 @@ const SHARED_LAYOUT = [
   "web/src/pages/Login.tsx",
   "web/src/pages/Home.tsx",
 ];
+
+/** Every built project tree: `<template>/<framework>` for the web templates, and the manage-only `agent`. */
+const ALL_TREES: string[] = readdirSync(dist, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && d.name !== "mcp-base")
+  .flatMap((d) =>
+    d.name === "agent"
+      ? ["agent"]
+      : readdirSync(join(dist, d.name), { withFileTypes: true })
+          .filter((f) => f.isDirectory())
+          .map((f) => `${d.name}/${f.name}`),
+  );
+
+interface ScaffoldManifest {
+  agent?: { mcpServers?: { ggui?: unknown } };
+  ggui?: unknown;
+}
+interface ScaffoldPackageJson {
+  dependencies?: { [name: string]: string };
+  devDependencies?: { [name: string]: string };
+}
+
+// guuey#3360: a new project is born without generative UI. It keeps the
+// `ggui: false` opt-out (the platform default stays seeded for apps that do not say it), and carries no
+// GGUI config at all: no ggui/ dir, no top-level `ggui` section, no @ggui-ai/cli, no ggui-dev MCP wiring.
+describe("a new project carries no GGUI config (guuey#3360)", () => {
+  it("builds every tree the scaffolder offers", () => {
+    expect(ALL_TREES).toContain("agent");
+    expect(ALL_TREES.filter((t) => t !== "agent").length).toBe(6);
+  });
+
+  it.each(ALL_TREES)("%s", (tree) => {
+    const root = join(dist, tree);
+    expect(existsSync(join(root, "ggui")), "ggui/").toBe(false);
+    expect(existsSync(join(root, ".mcp.json")), ".mcp.json").toBe(false);
+    const manifest: ScaffoldManifest = JSON.parse(readFileSync(join(root, "guuey.json"), "utf8"));
+    expect(manifest.ggui).toBeUndefined();
+    expect(manifest.agent?.mcpServers?.ggui).toBe(false);
+    const pkg: ScaffoldPackageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    for (const deps of [pkg.dependencies ?? {}, pkg.devDependencies ?? {}]) {
+      expect(Object.keys(deps).filter((name) => name.startsWith("@ggui-ai/"))).toEqual([]);
+    }
+  });
+});
 
 describe("assembled templates", () => {
   it.each(["claude-agent-sdk", "openai-agents-sdk"])(

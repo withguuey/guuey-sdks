@@ -39,8 +39,7 @@ yourself, reached by URL), you must set `federate: true` on it:
 }
 ```
 
-Without `federate: true` (or `kind: colocated`/`kind: hosted`/a `ggui`
-URL), guuey has no
+Without `federate: true` (or `kind: colocated`/`kind: hosted`), guuey has no
 identity to hand your server — a plain external entry with static
 `headers` gets **no token and no state.** The token guuey sends on every
 request to a federated server IS the credential; there is no separate

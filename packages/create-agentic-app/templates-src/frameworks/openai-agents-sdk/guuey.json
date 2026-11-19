@@ -16,8 +16,5 @@
         "devPort": 6782
       }
     }
-  },
-  "ggui": {
-    "configFile": "./ggui/ggui.json"
   }
 }

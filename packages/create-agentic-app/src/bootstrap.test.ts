@@ -80,12 +80,10 @@ async function makeProject(): Promise<Project> {
   const root = await fs.realpath(await testTempDir('caa-bootstrap-'));
   const projectDir = join(root, 'app');
   await fs.mkdir(join(projectDir, 'scripts'), { recursive: true });
-  await fs.mkdir(join(projectDir, 'ggui'), { recursive: true });
   for (const file of ['guuey.app.json', 'theme.json', 'AGENTS.md']) {
     await fs.copyFile(join(coreDir, file), join(projectDir, file));
   }
   await fs.copyFile(join(coreDir, 'scripts', 'bootstrap.mjs'), join(projectDir, 'scripts', 'bootstrap.mjs'));
-  await fs.copyFile(join(coreDir, 'ggui', 'ggui.json'), join(projectDir, 'ggui', 'ggui.json'));
   const bin = join(root, 'bin');
   await fs.mkdir(bin);
   await fs.writeFile(join(bin, 'pnpm'), FAKE_PNPM, { mode: 0o755 });

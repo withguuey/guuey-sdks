@@ -61,12 +61,9 @@ boot("worker", "pnpm", ["exec", "tsup", "--watch"]); // rebuilds guuey.worker.js
 // longer needs its own boot() here; a manual second spawn would double-bind
 // :6782 and crash with EADDRINUSE.
 boot("agent", "pnpm", ["exec", "guuey", "dev", "--serve", "--port", "6790"]);
-boot("ggui", "pnpm", ["exec", "ggui", "serve", "--mcp-only", "--no-console", "--dev-allow-all", "--port", "6781"], {
-  cwd: "ggui",
-});
 boot("web", "pnpm", ["--filter", "@agentic-app-template/web", "dev"], {
   env: { ...process.env, PORT: "6890" },
 });
 
 console.log("\n  agent  http://localhost:6790   todo-mcp http://localhost:6782");
-console.log("  ggui   http://localhost:6781   web      http://localhost:6890\n");
+console.log("  web    http://localhost:6890\n");

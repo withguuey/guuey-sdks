@@ -183,27 +183,6 @@ function syncChatTheme(config) {
   console.log(`theme.json → mode ${config.theme.mode}, accent ${accent} (the chat theme, local and hosted).`);
 }
 
-// ── ggui.json theme sync (guuey#302 scaffold hygiene) ───────────────────────
-
-/**
- * Keep `ggui/ggui.json`'s theme MODE in step with guuey.app.json so the
- * local `ggui serve` preview matches the site (the scaffold used to ship
- * the two contradicting each other: light site, dark ggui preview). Only
- * `mode` syncs — `preset` is ggui-side vocabulary and stays the author's
- * choice. NOTE: the deployed render's theme is platform data (`guuey
- * deploy` deliberately ignores this block; the hosted theme is theme.json,
- * pushed by `--link`) — this sync is about local-preview honesty.
- */
-function syncGguiTheme(config) {
-  const gguiJsonPath = join(projectRoot, "ggui", "ggui.json");
-  if (!existsSync(gguiJsonPath)) return;
-  const ggui = JSON.parse(readFileSync(gguiJsonPath, "utf8"));
-  if (ggui.theme?.mode === config.theme.mode) return;
-  ggui.theme = { ...(ggui.theme ?? {}), mode: config.theme.mode };
-  writeFileSync(gguiJsonPath, `${JSON.stringify(ggui, null, 2)}\n`, "utf8");
-  console.log(`ggui/ggui.json theme mode → ${config.theme.mode} (local preview matches the site).`);
-}
-
 // ── AGENTS.md managed block ─────────────────────────────────────────────────
 
 function managedBlock(config) {
@@ -504,7 +483,6 @@ async function main() {
   config.demoMode = false;
   writeConfig(config);
   syncChatTheme(config);
-  syncGguiTheme(config);
   regenerateAgentsMd(config);
 
   console.log(`\nConfigured "${name}" — guuey.app.json written, AGENTS.md updated.`);
