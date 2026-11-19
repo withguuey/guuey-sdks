@@ -208,8 +208,8 @@ function syncGguiTheme(config) {
 
 function managedBlock(config) {
   const link = config.link;
-  // The agent's shape steers the guidance: a declarative agent (an
-  // `--example` extraction, or a Studio pull) has NO worker build — its
+  // The agent's shape steers the guidance: a declarative agent (a Studio
+  // pull, or an older `--example` extraction) has NO worker build — its
   // whole definition is guuey.json + the system prompt.
   const guueyJson = existsSync(GUUEY_JSON_PATH)
     ? JSON.parse(readFileSync(GUUEY_JSON_PATH, "utf8"))
@@ -499,8 +499,8 @@ async function main() {
   config.theme.mode = mode;
   config.copy.landing.headline = headline;
   config.bootstrapped = true;
-  // A bootstrap makes the app YOURS — if this started life as a demo
-  // extraction (`--example`), the demo chrome turns off here.
+  // A bootstrap makes the app YOURS: a project that started with the demo
+  // chrome on (an extraction by a retired `--example`) turns it off here.
   config.demoMode = false;
   writeConfig(config);
   syncChatTheme(config);

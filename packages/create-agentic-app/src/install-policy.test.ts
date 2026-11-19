@@ -3,8 +3,8 @@
  * (`--install`) and the printed "Next steps" led with `pnpm install`, which
  * a first-time builder skipped straight into `sh: tsup: not found` (#979).
  *
- * The decision is one pure function both scaffold paths (template + example)
- * and the "Next steps" print share, so the three cannot disagree.
+ * The decision is one pure function the scaffold and the "Next steps" print
+ * share, so the two cannot disagree.
  */
 import { describe, expect, it } from 'vitest';
 import { installByDefault } from './shared.js';

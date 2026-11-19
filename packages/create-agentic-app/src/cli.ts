@@ -9,7 +9,7 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { addCode, nextSteps, pnpmInvocation, pnpmRunner, scaffold, scaffoldExample, type Framework, type Template } from './index.js';
+import { addCode, nextSteps, pnpmInvocation, pnpmRunner, scaffold, type Framework, type Template } from './index.js';
 import { installByDefault } from './shared.js';
 import { parseAnalyticsFlag } from './analytics.js';
 
@@ -79,9 +79,6 @@ Options:
                         surfaces). Embed-SDK builders want base/agentic-app
   --framework <f>       Framework: ${FRAMEWORKS.join(' | ')}
   --agent <f>           Alias for --framework
-  --example <vertical>  Extract a demo app from github.com/withguuey/demos
-                        instead of a blank template (mutually exclusive with
-                        --template/--framework; re-brand via ${run} bootstrap)
   --app <appId>         Bind to an EXISTING guuey app: stamps the id into
                         guuey.json so "${run} bootstrap -- --link" runs
                         promptless (the tada page's copy-paste line)
@@ -181,31 +178,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  // `--example <vertical>`: pull an already-branded demo app out of the
-  // public withguuey/demos monorepo. Mutually exclusive with the template
-  // axis — an example IS a pre-templated app with its framework baked in.
+  // `--example` is retired with the demo apps it pulled. Refused by name, never ignored: the parser
+  // accepts any flag, so without this a script's `--example trimly` would silently scaffold a blank
+  // base template instead.
   if (flags.example !== undefined) {
-    if (flags.template !== undefined || flags.framework !== undefined || flags.agent !== undefined) {
-      console.error('--example is mutually exclusive with --template/--framework (an example is already a complete app).');
-      process.exit(1);
-      return;
-    }
-    if (typeof flags.example !== 'string') {
-      console.error('--example needs a value, e.g. --example trimly');
-      process.exit(1);
-      return;
-    }
-    const installed = installByDefault(flags);
-    const { projectDir, pnpm } = await scaffoldExample({
-      targetDir: target,
-      example: flags.example,
-      install: installed,
-      git: flags['no-git'] !== true,
-      force: flags.force === true,
-    });
-    console.log(`\nExtracted the "${flags.example}" example into ${projectDir}\n`);
-    for (const line of nextSteps({ projectDir, pnpm, installed, kind: 'example' })) console.log(line);
-    console.log('  Need help? https://guuey.com/discord');
+    console.error(
+      '--example is retired. Start from a template instead, e.g. --template agentic-app.',
+    );
+    process.exit(1);
     return;
   }
 

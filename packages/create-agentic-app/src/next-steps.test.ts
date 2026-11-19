@@ -53,12 +53,8 @@ describe('nextSteps', () => {
     ]);
   });
 
-  it('an example re-brands and runs; the manage-only agent template logs in and applies (it has no bootstrap script)', () => {
+  it('the manage-only agent template logs in and applies (it has no bootstrap script)', () => {
     const npx = { file: 'npx', prefix: ['--yes', SCAFFOLD_PNPM] };
-    expect(nextSteps({ projectDir, pnpm: npx, installed: true, kind: 'example' }).slice(2)).toEqual([
-      `  ${NPX_RUNNER} bootstrap        # re-brand it as yours (also turns the demo chrome off)`,
-      `  ${NPX_RUNNER} dev`,
-    ]);
     const agent = nextSteps({ projectDir, pnpm: npx, installed: true, kind: 'agent' }).slice(2);
     expect(agent).toEqual([
       `  ${NPX_RUNNER} login          # once — opens the guuey console`,
@@ -241,8 +237,20 @@ describe('create-agentic-app on a machine without pnpm (the built CLI)', () => {
     stub('npx');
     const r = runCli(['--help']);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain(`re-brand via ${NPX_RUNNER} bootstrap)`);
     expect(r.stdout).toContain(`"${NPX_RUNNER} bootstrap -- --link" runs`);
+    expect(r.stdout).not.toContain('--example');
+  });
+
+  // --example is retired. The parser accepts any flag, so the CLI must refuse this one
+  // by name: ignored, `--example trimly` would scaffold a blank base template instead.
+  it('--example is retired: refused by name before any download, and nothing is scaffolded', () => {
+    stub('npx');
+    const r = runCli(['retired-example', '--example', 'trimly']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('--example is retired');
+    expect(r.stderr).toContain('--template agentic-app');
+    expect(existsSync(join(work, 'retired-example'))).toBe(false);
+    expect(calls('npx')).toEqual([]);
   });
 
   it('control — pnpm on PATH: the plain pnpm lines, in stdout and in the project, and npx never probed', () => {

@@ -10,8 +10,8 @@
  */
 import { pnpmRunner, SCAFFOLD_PNPM, type PnpmInvocation } from './pnpm.js';
 
-/** What was scaffolded: a web-app template, the manage-only agent template, or an `--example` demo. */
-export type NextStepsKind = 'app' | 'agent' | 'example';
+/** What was scaffolded: a web-app template, or the manage-only agent template. */
+export type NextStepsKind = 'app' | 'agent';
 
 export interface NextStepsInput {
   /** The scaffolded project's directory. */
@@ -42,10 +42,6 @@ export function nextSteps(input: NextStepsInput): string[] {
   }
   if (!input.installed) lines.push(`  ${run} install`);
   switch (input.kind) {
-    case 'example':
-      lines.push(`  ${run} bootstrap        # re-brand it as yours (also turns the demo chrome off)`);
-      lines.push(`  ${run} dev`);
-      break;
     case 'agent':
       lines.push(`  ${run} login          # once — opens the guuey console`);
       if (input.bound === true) {
