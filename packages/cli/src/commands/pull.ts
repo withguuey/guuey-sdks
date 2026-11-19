@@ -64,6 +64,7 @@ import {
   declaredServerEntries,
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+  PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS,
   type GuueyAgent,
   type GuueyJsonV1,
 } from '@guuey/config';
@@ -396,7 +397,7 @@ export type DraftPromptAction =
  */
 function isKnownDefaultPrompt(content: string): boolean {
   if (content === `${GUUEY_DEFAULT_SYSTEM_PROMPT}\n` || content === GUUEY_DEFAULT_SYSTEM_PROMPT) return true;
-  return SCAFFOLD_PROMPT_UNDER_ANY_NAME.test(content);
+  return SCAFFOLD_PROMPTS_UNDER_ANY_NAME.some((pattern) => pattern.test(content));
 }
 
 /**
@@ -408,16 +409,29 @@ function isKnownDefaultPrompt(content: string): boolean {
 export const SCAFFOLD_NAME_TOKEN = 'agentic-app-template';
 
 /**
- * The scaffold prompt as a fresh project carries it (guuey#3260): the token
+ * A scaffold prompt as a fresh project carries it (guuey#3260): the token
  * stands for any one name (the same name at each occurrence), and the rest of
  * the text matches byte for byte, with or without the final newline. A name
  * never spans lines.
  */
-const SCAFFOLD_PROMPT_UNDER_ANY_NAME = new RegExp(
-  `^${GUUEY_SCAFFOLD_SYSTEM_PROMPT.split(SCAFFOLD_NAME_TOKEN)
-    .map(escapeRegExp)
-    .reduce((pattern, part, i) => `${pattern}${i === 1 ? '([^\\n]+)' : '\\1'}${part}`)}\\n?$`,
-);
+function scaffoldPromptUnderAnyName(text: string): RegExp {
+  return new RegExp(
+    `^${text
+      .split(SCAFFOLD_NAME_TOKEN)
+      .map(escapeRegExp)
+      .reduce((pattern, part, i) => `${pattern}${i === 1 ? '([^\\n]+)' : '\\1'}${part}`)}\\n?$`,
+  );
+}
+
+/**
+ * Today's scaffold prompt and every one an earlier release shipped
+ * (`PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS`): a project scaffolded before the text
+ * changed still carries its own release's prompt, untouched (guuey#3360).
+ */
+const SCAFFOLD_PROMPTS_UNDER_ANY_NAME: readonly RegExp[] = [
+  GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+  ...PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS,
+].map(scaffoldPromptUnderAnyName);
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -65,6 +65,7 @@ import { getProjectConfigPath, loadProjectConfig, saveProjectConfig } from '../c
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+  PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS,
 } from '@guuey/config';
 
 /** A scaffold-shaped local overlay (the fresh `guuey create` output). */
@@ -364,6 +365,33 @@ describe('resolveDraftPromptAction', () => {
     it('a "name" that spans lines is not a rename: diverged', () => {
       expect(resolveDraftPromptAction(DRAFT, renamed('my\nshop'))).toEqual({ kind: 'diverged' });
     });
+  });
+
+  // guuey#3360: a project scaffolded before the scaffold prompt changed still carries that release's text,
+  // untouched. Pull treats every earlier scaffold prompt as the untouched default too, bare or renamed.
+  describe('a scaffold prompt an earlier release shipped (guuey#3360)', () => {
+    it('there is at least one earlier text, and none is today\'s', () => {
+      expect(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS.length).toBeGreaterThan(0);
+      expect(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS).not.toContain(GUUEY_SCAFFOLD_SYSTEM_PROMPT);
+    });
+
+    it.each(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS.map((text, i) => [i, text] as const))(
+      'earlier prompt #%i: written over bare, with its newline, and renamed',
+      (_i, text) => {
+        expect(resolveDraftPromptAction(DRAFT, `${text}\n`)).toEqual({ kind: 'write', content: DRAFT });
+        expect(resolveDraftPromptAction(DRAFT, text)).toEqual({ kind: 'write', content: DRAFT });
+        const renamed = text.replaceAll(SCAFFOLD_NAME_TOKEN, 'my-shop');
+        expect(renamed).not.toBe(text);
+        expect(resolveDraftPromptAction(DRAFT, `${renamed}\n`)).toEqual({ kind: 'write', content: DRAFT });
+      },
+    );
+
+    it.each(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS.map((text, i) => [i, text] as const))(
+      'earlier prompt #%i with an edit is still diverged',
+      (_i, text) => {
+        expect(resolveDraftPromptAction(DRAFT, `${text}\nMy edit.\n`)).toEqual({ kind: 'diverged' });
+      },
+    );
   });
 
   it('no-ops when the wire has no draft: absent field (older cliApi), null, or empty', () => {

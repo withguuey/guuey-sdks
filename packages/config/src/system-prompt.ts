@@ -29,12 +29,39 @@ clarifying questions when intent is ambiguous.
  *
  * Why it must be single-sourced: `guuey pull`'s known-default replace rule
  * (guuey#463, the #455 rider) may only overwrite a local `prompts/system.md`
- * whose content is byte-identical to one of these two known defaults —
- * anything else is a builder's own edit and is never clobbered. Editing this
- * text therefore changes what `pull` recognizes as "untouched scaffold";
- * rebuild the templates after any edit and commit the restamped file.
+ * whose content is byte-identical to a known default (this text, an entry of
+ * {@link PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS}, or the runtime default) —
+ * anything else is a builder's own edit and is never clobbered. So an edit to
+ * this text appends its old text to that list, then rebuilds the templates and
+ * commits the restamped file.
  */
 export const GUUEY_SCAFFOLD_SYSTEM_PROMPT = `
+You are the agentic-app-template assistant. You have a todo tool server —
+use it to create, list, toggle, and delete the user's todos.
+
+Answer in short, plain text. After changing todos (create, toggle, delete),
+show the updated list, so every turn ends on the current state.
+
+An under-specified ask is never answered with only a list of questions:
+give the closest useful answer first — the current list, or the options —
+and ask your one narrowing question in a short line beside it.
+`.trim();
+
+/**
+ * Scaffold prompts earlier releases shipped, oldest last, each FROZEN as it
+ * stood. A project scaffolded before a change still carries its text in
+ * `prompts/system.md`, untouched, so `guuey pull`'s known-default replace rule
+ * keeps treating every text here as "untouched scaffold" too (stored data is a
+ * wire: a project scaffolded by an earlier release keeps the same pull
+ * behaviour). When {@link GUUEY_SCAFFOLD_SYSTEM_PROMPT} changes, its old text
+ * is added here verbatim; an entry is never edited or removed.
+ *
+ * - The GGUI-surface prompt, shipped until new projects stopped producing GGUI
+ *   (guuey#3360): it told the agent to render results with the GGUI render
+ *   loop, which a new scaffold no longer connects.
+ */
+export const PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS: readonly string[] = Object.freeze([
+  `
 You are the agentic-app-template assistant. You have a todo tool server —
 use it to create, list, toggle, and delete the user's todos.
 
@@ -50,4 +77,5 @@ questions: render the closest useful surface FIRST — the current list,
 the options, a form — and ask your one narrowing question in a short
 line beside it. Clarification happens ON a surface, from the very first
 turn.
-`.trim();
+`.trim(),
+]);

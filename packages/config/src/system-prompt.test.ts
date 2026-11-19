@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GUUEY_DEFAULT_SYSTEM_PROMPT,
   GUUEY_SCAFFOLD_SYSTEM_PROMPT,
+  PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS,
 } from './system-prompt.js';
 
 const TEMPLATE_PROMPT = fileURLToPath(
@@ -41,6 +42,12 @@ describe('GUUEY_SCAFFOLD_SYSTEM_PROMPT', () => {
     expect(GUUEY_SCAFFOLD_SYSTEM_PROMPT).not.toBe(GUUEY_DEFAULT_SYSTEM_PROMPT);
   });
 
+  // guuey#3360: a new project is born without generative UI, so its prompt names no GGUI render loop.
+  it('names no GGUI surface (a new scaffold connects no generative-UI server)', () => {
+    expect(GUUEY_SCAFFOLD_SYSTEM_PROMPT.toLowerCase()).not.toContain('ggui');
+    expect(GUUEY_SCAFFOLD_SYSTEM_PROMPT).not.toContain('surface');
+  });
+
   it.skipIf(!existsSync(TEMPLATE_PROMPT))(
     'byte-equals the checked-in template (as stamped: text + "\\n") — rerun build-templates.mjs after editing either side',
     () => {
@@ -49,4 +56,25 @@ describe('GUUEY_SCAFFOLD_SYSTEM_PROMPT', () => {
       );
     },
   );
+});
+
+describe('PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS (guuey#3360)', () => {
+  it('holds trimmed texts, none equal to today\'s scaffold prompt or the runtime default, no duplicates', () => {
+    expect(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS.length).toBeGreaterThan(0);
+    for (const text of PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS) {
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).toBe(text.trim());
+      expect(text).not.toBe(GUUEY_SCAFFOLD_SYSTEM_PROMPT);
+      expect(text).not.toBe(GUUEY_DEFAULT_SYSTEM_PROMPT);
+    }
+    expect(new Set(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS).size).toBe(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS.length);
+  });
+
+  it('is frozen at runtime, not only typed readonly: a consumer cannot edit the published list', () => {
+    expect(Object.isFrozen(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS)).toBe(true);
+  });
+
+  it('keeps the GGUI-surface prompt shipped before #3360, so projects scaffolded with it still pull as untouched', () => {
+    expect(PREVIOUS_SCAFFOLD_SYSTEM_PROMPTS[0]).toContain('render it as an interactive surface with the ggui render');
+  });
 });
