@@ -69,6 +69,7 @@ function answeringQuery(
   sets: Array<Record<string, McpServerConfig>> = [],
 ): QueryHandle {
   return {
+    initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
     setMcpServers: (servers) => {
       sets.push(servers);
       return Promise.resolve({ added: [], removed: [], errors: {} });
@@ -117,6 +118,7 @@ function fakeSpare(answer: "accept" | "refuse"): {
           for await (const _message of prompt) seen.messages += 1;
         })();
         return {
+          initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
           setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
           mcpServerStatus: () => Promise.resolve([]),
           close: () => {

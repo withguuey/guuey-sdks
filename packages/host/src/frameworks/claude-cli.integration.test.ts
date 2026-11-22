@@ -315,6 +315,7 @@ function recordingQuery(spawns: SpawnRecord[], log: { statusPending: number[]; p
     }
     const q = realQuery({ prompt: prompt(), options });
     const handle: QueryHandle = {
+      initializationResult: () => q.initializationResult(),
       setMcpServers: (servers) => q.setMcpServers(servers),
       mcpServerStatus: async () => {
         const statuses = await q.mcpServerStatus();

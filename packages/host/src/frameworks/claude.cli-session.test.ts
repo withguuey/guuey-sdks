@@ -67,6 +67,7 @@ async function oneTurn(inv: HostInvoke, ...stream: SDKMessage[]) {
     options = args.options;
     void (async () => { for await (const m of args.prompt) content = m.message.content; })();
     const handle: QueryHandle = {
+      initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
       setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
       mcpServerStatus: () => Promise.resolve([]),
       close: () => undefined,
@@ -306,6 +307,7 @@ describe("a bound turn never empties the thread's store (success and failure)", 
     const query: QueryFn = (args) => {
       void (async () => { for await (const m of args.prompt) sent.push(m); })();
       const handle: QueryHandle = {
+        initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
         setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
         mcpServerStatus: () => Promise.resolve([]),
         close: () => undefined,

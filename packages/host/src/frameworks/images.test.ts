@@ -85,6 +85,7 @@ async function claudeTurn(over: Partial<HostInvoke>): Promise<{ sent: SDKUserMes
   const { events, sink } = collector();
   let sent: SDKUserMessage | undefined;
   const query: QueryFn = (args) => ({
+    initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
     setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
     mcpServerStatus: () => Promise.resolve([]),
     close: () => undefined,

@@ -1,10 +1,12 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { anthropicUserContent, CLAUDE_CLI_FIXED_ROOT, CLAUDE_CLI_ROOT_ENV, createEmitter, type WorkerEvent } from "@guuey/worker";
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { awaitMcpReady, CLI_ROOT_PREFIX, runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
+import { awaitMcpReady, CLI_ROOT_PREFIX, hostMarksSince, runInvoke, withSpawnMark, type HostInvoke, type HostMark, type QueryFn, type QueryHandle } from "./claude.js";
+import type { Options, SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import { A2UI_GUUEY_CATALOG_ID, A2UI_SECTION, FIRST_IMPRESSION_SHOWN_HEADING, TURN_CONTEXT_LEAD } from "../preamble.js";
 
 /** The constant head every `<turn_context>` block opens with (A1: the tag, then the lead line). */
@@ -69,6 +71,7 @@ function resultMessage(subtype: string, result: string, isError = false): SDKMes
 
 /** The control half of a fake `Query`: no MCP servers, every call answered at once. */
 const idleControl = {
+  initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
   setMcpServers: () => Promise.resolve({ added: [], removed: [], errors: {} }),
   mcpServerStatus: () => Promise.resolve([]),
   close: () => undefined,
@@ -597,6 +600,7 @@ describe("the MCP-ready gate and the startup deadline (guuey#2139)", () => {
 
   it("a server still pending at the MCP-ready deadline is named and the gate opens", async () => {
     const q: QueryHandle = {
+      initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
       setMcpServers: () => Promise.resolve({ added: ["fake"], removed: [], errors: {} }),
       mcpServerStatus: () => Promise.resolve([{ name: "fake", status: "pending" as const }]),
       close: () => undefined,
@@ -612,6 +616,7 @@ describe("the MCP-ready gate and the startup deadline (guuey#2139)", () => {
     let closed = 0;
     let pulled = false;
     const query: QueryFn = (params) => ({
+      initializationResult: () => Promise.resolve({ commands: [], agents: [], output_style: "default", available_output_styles: [], models: [], account: {} }),
       setMcpServers: () => new Promise(() => undefined),
       mcpServerStatus: () => Promise.resolve([]),
       close: () => {
@@ -867,5 +872,109 @@ describe("runInvoke — the CLI's state roots are fresh, empty directories per i
     expect(terminal).toHaveLength(1);
     expect(terminal[0]?.type).toBe("error");
     expect(JSON.stringify(terminal[0])).toContain("per-invoke state directories");
+  });
+});
+
+/** The `[guuey] host-mark` lines a run writes to stderr, as their words, in order. */
+async function hostMarksOf(run: () => Promise<void>): Promise<string[]> {
+  const lines: string[] = [];
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  try {
+    await run();
+  } finally {
+    spy.mockRestore();
+  }
+  return lines.flatMap((line) => {
+    const m = /^\[guuey\] host-mark (\w+) afterHelloMs=\d+\n$/.exec(line);
+    return m?.[1] === undefined ? [] : [m[1]];
+  });
+}
+
+describe("host first-token marks: fixed words + a duration since the hello, on stderr", () => {
+  it("one line per mark, whole ms since the hello, never negative", () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    let t = 1000.4;
+    const marks = hostMarksSince(1000, () => t);
+    marks("setMcpServersAnswered");
+    t = 1849.6;
+    marks("gateOpened");
+    t = 500;
+    marks("cliSpawned");
+    spy.mockRestore();
+    expect(lines).toEqual([
+      "[guuey] host-mark setMcpServersAnswered afterHelloMs=0\n",
+      "[guuey] host-mark gateOpened afterHelloMs=850\n",
+      "[guuey] host-mark cliSpawned afterHelloMs=0\n",
+    ]);
+  });
+
+  it("withSpawnMark marks cliSpawned right AFTER the original spawner returns, and hands its process back", () => {
+    const order: string[] = [];
+    const proc: SpawnedProcess = {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      killed: false,
+      exitCode: null,
+      kill: () => true,
+      on: () => undefined,
+      once: () => undefined,
+      off: () => undefined,
+    };
+    const original = (o: SpawnOptions): SpawnedProcess => {
+      order.push(`spawn:${o.command}`);
+      return proc;
+    };
+    const wrapped = withSpawnMark({ spawnClaudeCodeProcess: original }, (mark: HostMark) => order.push(mark));
+    const spawnOptions: SpawnOptions = { command: "claude", args: [], env: {}, signal: new AbortController().signal };
+    const got = wrapped.spawnClaudeCodeProcess?.(spawnOptions);
+    expect(got).toBe(proc);
+    expect(order).toEqual(["spawn:claude", "cliSpawned"]);
+  });
+
+  it("withSpawnMark leaves options with no spawner as they are", () => {
+    const options: Options = { maxTurns: 1 };
+    expect(withSpawnMark(options, () => undefined)).toBe(options);
+  });
+
+  it("a cold turn marks initializeAnswered, setMcpServersAnswered and gateOpened once each, the gate last", async () => {
+    const { sink } = collector();
+    const words = await hostMarksOf(() =>
+      runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), () => streamOf(resultMessage("success", "ok"))),
+    );
+    expect([...words].sort()).toEqual(["gateOpened", "initializeAnswered", "setMcpServersAnswered"]);
+    expect(words.indexOf("setMcpServersAnswered")).toBeLessThan(words.indexOf("gateOpened"));
+  });
+
+  it("an initialize the CLI fails is marked initializeFailed, and the turn is decided as before", async () => {
+    const { sink, events } = collector();
+    const failing: QueryHandle = { ...streamOf(resultMessage("success", "ok")), initializationResult: () => Promise.reject(new Error("init failed")) };
+    const words = await hostMarksOf(() =>
+      runInvoke({}, invoke(), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), () => failing),
+    );
+    expect(words).toContain("initializeFailed");
+    expect(words).not.toContain("initializeAnswered");
+    expect(events.at(-1)?.type).toBe("done");
+  });
+
+  it("awaitMcpReady marks setMcpServersAnswered only once the CLI answers", async () => {
+    const seen: HostMark[] = [];
+    let answer!: () => void;
+    const q: QueryHandle = {
+      ...streamOf(),
+      setMcpServers: () => new Promise((resolve) => { answer = () => resolve({ added: [], removed: [], errors: {} }); }),
+    };
+    const ready = awaitMcpReady(q, {}, {}, (mark) => seen.push(mark));
+    await Promise.resolve();
+    expect(seen).toEqual([]);
+    answer();
+    await ready;
+    expect(seen).toEqual(["setMcpServersAnswered"]);
   });
 });

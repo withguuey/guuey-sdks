@@ -17,6 +17,7 @@ import type {
   McpServerStatus,
   McpSetServersResult,
   Options,
+  SDKControlInitializeResponse,
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -179,7 +180,46 @@ export interface HostRuntime {
 export interface QueryHandle extends AsyncIterable<SDKMessage> {
   setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult>;
   mcpServerStatus(): Promise<McpServerStatus[]>;
+  /** The CLI's answer to the SDK's own `initialize` (cached by the SDK; observing it sends nothing). */
+  initializationResult(): Promise<SDKControlInitializeResponse>;
   close(): void;
+}
+
+/**
+ * The host's first-token marks: where the time between the hello and the CLI's first model request goes. Each is ONE
+ * stderr line of fixed words and a duration, `[guuey] host-mark <name> afterHelloMs=<n>`, counted from this turn's hello.
+ * Stderr is the worker's log on both launch paths (never parsed as protocol), so a Router that predates the marks logs
+ * them like any other line, and a newer one can fold them onto its phase line against its own hello time.
+ * - `cliSpawned`: the SDK spawned the CLI process for this turn (a cold start; a claimed spare was spawned earlier and
+ *   says so on its own `Claude spare claimed` line).
+ * - `initializeAnswered` / `initializeFailed`: the CLI answered (or failed) the SDK's `initialize`.
+ * - `setMcpServersAnswered`: the CLI answered `setMcpServers`. The pinned CLI connects every server before it answers.
+ * - `gateOpened`: the MCP-ready gate opened and the user message goes to the CLI.
+ */
+export type HostMark = "cliSpawned" | "initializeAnswered" | "initializeFailed" | "setMcpServersAnswered" | "gateOpened";
+
+/** Writes a turn's {@link HostMark} lines. */
+export type HostMarks = (mark: HostMark) => void;
+
+/** The marks of one turn whose hello went at `helloAt` (a `now()` reading): each line carries the whole ms since then. */
+export function hostMarksSince(helloAt: number, now: () => number = () => performance.now()): HostMarks {
+  return (mark) => {
+    process.stderr.write(`[guuey] host-mark ${mark} afterHelloMs=${String(Math.max(0, Math.round(now() - helloAt)))}\n`);
+  };
+}
+
+/** The options with their CLI spawner wrapped to mark `cliSpawned` right after the spawn. Unset spawner: unchanged. */
+export function withSpawnMark(options: Options, marks: HostMarks): Options {
+  const spawn = options.spawnClaudeCodeProcess;
+  if (spawn === undefined) return options;
+  return {
+    ...options,
+    spawnClaudeCodeProcess: (spawnOptions) => {
+      const spawned = spawn(spawnOptions);
+      marks("cliSpawned");
+      return spawned;
+    },
+  };
 }
 
 /** The `query` surface the loop needs — the real SDK `query` satisfies it (streaming input). */
@@ -249,6 +289,7 @@ export async function awaitMcpReady(
   q: QueryHandle,
   servers: Record<string, McpServerConfig>,
   timing: ClaudeTurnTiming = {},
+  marks: HostMarks = () => undefined,
 ): Promise<string[]> {
   const startupMs = timing.startupDeadlineMs ?? CLAUDE_STARTUP_DEADLINE_MS;
   const readyMs = timing.mcpReadyDeadlineMs ?? CLAUDE_MCP_READY_DEADLINE_MS;
@@ -257,6 +298,7 @@ export async function awaitMcpReady(
     startupMs,
     () => new ClaudeStartupError(`no answer to setMcpServers within ${String(startupMs)} ms`),
   );
+  marks("setMcpServersAnswered");
   const names = Object.keys(servers);
   const problems = new Map<string, string>();
   for (const [name, message] of Object.entries(result.errors)) problems.set(name, `error: ${message}`);
@@ -702,6 +744,7 @@ async function runClaudeTurn(
   }
   // The turn's first event when it carried no `cliSession` (a no-op otherwise).
   hello();
+  const marks = hostMarksSince(performance.now());
   // The platform-owned names buildOptions left out of the agent's environment,
   // reported on stderr (names only) so the drop is never silent.
   const droppedEnv = reservedEnvNamesDropped(snapshot);
@@ -742,6 +785,8 @@ async function runClaudeTurn(
     })();
   }
 
+  // First-token marks (see HostMark): the spawn is marked by the wrapped spawner, which the spare key ignores.
+  options = withSpawnMark(options, marks);
   let q: QueryHandle;
   try {
     q =
@@ -752,6 +797,10 @@ async function runClaudeTurn(
     emit.error(err instanceof Error ? err.message : String(err));
     return;
   }
+  void q.initializationResult().then(
+    () => marks("initializeAnswered"),
+    () => marks("initializeFailed"),
+  );
   let done: { stopReason: StopReason; result: string } | undefined;
   // B3 (R14, cto point 1): a resume is confirmed POSITIVELY before anything is
   // forwarded. The CLI's first message must be the `init` of the id the Router
@@ -787,7 +836,7 @@ async function runClaudeTurn(
   );
 
   try {
-    const problems = await awaitMcpReady(q, resolveMcpServers(ctx), timing);
+    const problems = await awaitMcpReady(q, resolveMcpServers(ctx), timing, marks);
     // Reported on stderr only, NOT through the `mcpAvailability` / `error`
     // path (guuey#2139): `mcpAvailability` is the Router's pre-turn input,
     // already rendered into the turn's context block, so a
@@ -812,6 +861,7 @@ async function runClaudeTurn(
     return;
   }
   sendMessage = true;
+  marks("gateOpened");
   openGate();
   const failure = await streamOutcome;
   endInput();
