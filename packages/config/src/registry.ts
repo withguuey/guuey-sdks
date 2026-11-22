@@ -269,6 +269,64 @@ export const FRAMEWORK_REGISTRY: readonly FrameworkEntry[] = [
 ];
 
 /**
+ * The `@anthropic-ai/claude-agent-sdk` versions guuey RUNS a builder's code-mode package on: `min` inclusive,
+ * `belowExclusive` exclusive. Both are exact `x.y.z` strings, compared numerically part by part, so no consumer needs
+ * a semver dependency.
+ *
+ * This is a different claim from `facetSupportedRange` above, which mirrors the silverprotocol facet's peer range and is
+ * guarded to that meaning by scripts/check-pin-coherence.mjs. This range says "the platform runs it":
+ * - the floor is `@guuey/host`'s peer floor (`^0.3.199`), which this package's own test re-reads;
+ * - the ceiling stops before 0.4.0, a new minor of a 0.x line (breaking by convention), and nothing on 0.4 is tested;
+ * - the image pin (`platformPinnedVersion`) sits inside it (tested).
+ *
+ * ONE source: the platform's build-time check of a code-mode package and the CLI read this same value and predicate.
+ * Neither side retypes the numbers.
+ */
+export interface SdkSupportedRange {
+  /** Lowest supported version, inclusive, exact `x.y.z`. */
+  readonly min: string;
+  /** First UNsupported version above the range, exclusive, exact `x.y.z`. */
+  readonly belowExclusive: string;
+}
+
+export const CLAUDE_AGENT_SDK_SUPPORTED: SdkSupportedRange = { min: "0.3.199", belowExclusive: "0.4.0" };
+
+/** An exact `x.y.z` (digits only, no prefix, range or prerelease) as numbers, or null. */
+function exactVersionParts(version: string): readonly [number, number, number] | null {
+  const m = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(version);
+  return m === null ? null : [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/** Negative, zero or positive as `a` is below, equal to or above `b` (both already parsed). */
+function compareParts(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+
+/**
+ * Whether an INSTALLED claude-agent-sdk version is one guuey runs. Fail-closed: anything that is not an exact `x.y.z`
+ * (a range, a `v` prefix, a prerelease, empty) is unsupported, because the check reads what was installed, which is
+ * always exact.
+ */
+export function isClaudeAgentSdkSupported(version: string, range: SdkSupportedRange = CLAUDE_AGENT_SDK_SUPPORTED): boolean {
+  const v = exactVersionParts(version);
+  const lo = exactVersionParts(range.min);
+  const hi = exactVersionParts(range.belowExclusive);
+  if (v === null || lo === null || hi === null) return false;
+  return compareParts(v, lo) >= 0 && compareParts(v, hi) < 0;
+}
+
+/**
+ * The builder's line for an unsupported SDK, the same words wherever it is shown (the CLI and the build's refusal).
+ * `version` is printed as given, cut to 40 characters.
+ */
+export function claudeAgentSdkUnsupportedLine(version: string, range: SdkSupportedRange = CLAUDE_AGENT_SDK_SUPPORTED): string {
+  return (
+    `Your app uses @anthropic-ai/claude-agent-sdk ${version.slice(0, 40)}; guuey runs ${range.min} up to ` +
+    `(not including) ${range.belowExclusive}. Change the version in package.json, reinstall, and deploy again.`
+  );
+}
+
+/**
  * The registry's ACCESSORS, bound to an explicit registry (guuey#634).
  *
  * Every predicate below closes over the models it judges. The live exports
