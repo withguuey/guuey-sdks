@@ -160,7 +160,11 @@ export function workerClaudeSessionGate(env: Readonly<Record<string, string | un
   return { ok: true, configDir, executable };
 }
 
-/** What a builder worker's turn hands {@link NativeEmit.claudeSession}: exactly the values it passes `query()`. */
+/**
+ * What a builder worker's turn hands {@link NativeEmit.claudeSession}: the values it passes `query()`, except that the
+ * `header`'s tool rules are the conversation's own, without this turn's withholds (`invoke.withheldTools`): a tool
+ * withheld for one turn is refused through `query()`, and it never starts the conversation over.
+ */
 export interface WorkerClaudeSessionTurn {
   /** The system prompt option. Only one string can resume; a preset runs the turn without a session. */
   readonly systemPrompt: string | object | undefined;

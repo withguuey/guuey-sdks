@@ -145,13 +145,23 @@ await serveNative(
       tools: [],
     };
     const prompt = systemPrompt(invoke, agent);
+    // The conversation's own configuration, which the session is kept for: the same rules WITHOUT this turn's
+    // withholds. A tool withheld for one turn is still refused (`agentOptions` above is what query() gets), but it
+    // does not change the conversation's configuration, so it never starts the conversation over. A different mode is
+    // a different configuration (its prompt and tools), and it does.
+    const stableRules = claudeToolRules(agent.tools, Object.keys(mcpServers), { builtins: [] });
+    const sessionHeader = {
+      ...agentOptions,
+      allowedTools: stableRules.allowedTools,
+      disallowedTools: stableRules.disallowedTools,
+    };
     // guuey#3550: continue the conversation's own CLI session when the platform names one. A resumed invoke carries no
     // history (the session holds it), so its message has none; a resume this worker cannot apply throws, and the
     // platform re-runs the turn as a start with its history. `claudeSession` sends the turn's hello, so it is called
     // before anything is emitted. An empty prompt passes no system prompt to query(), so it cannot resume either.
     const resumes = invoke.cliSession?.mode === "resume";
     const content = anthropicUserContent(invoke, resumes ? modelInputOf(invoke) : withHistory(invoke));
-    const session = emit.claudeSession?.({ systemPrompt: prompt || undefined, header: agentOptions, servers: mcpServers, content });
+    const session = emit.claudeSession?.({ systemPrompt: prompt || undefined, header: sessionHeader, servers: mcpServers, content });
     // An emit without claudeSession (not serveNative's) cannot continue a session, and a resume has no history to run with.
     if (resumes && session === undefined) throw new Error(cliSessionNotAppliedMessage("this serve loop has no claudeSession"));
     // Set when the CLI's first message does not confirm the session: the turn's error, and nothing is forwarded.

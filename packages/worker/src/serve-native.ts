@@ -64,8 +64,9 @@ export interface NativeEmit {
   endThread(request: EndThread): "ok" | "not_offered";
   /**
    * guuey#3550: apply the invoke's {@link Invoke.cliSession} to this Claude turn, for a worker served with
-   * {@link NativeServeInfo.claudeSession}. Call it once, with exactly the values the turn passes `query()`, BEFORE
-   * anything else is emitted: it sends the hello with the thread-resume block. Spread the answer's `options` into the
+   * {@link NativeServeInfo.claudeSession}. Call it once, with the values the turn passes `query()` (its tool rules
+   * without the turn's withholds), BEFORE anything else is emitted: it sends the hello with the thread-resume block.
+   * Spread the answer's `options` into the
    * SDK's options and its `env` into the SDK's `env`, and pass the CLI's first message to `confirmFirst`; a string
    * back is the turn's error (throw it), and nothing of the turn may be emitted.
    *

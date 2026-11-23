@@ -390,6 +390,36 @@ describe("Claude template worker: thread resume (guuey#3550)", () => {
     expect(turns[0]?.header).toMatchObject({ allowedTools: q.options.allowedTools, tools: [] });
   });
 
+  it("a tool withheld for one turn keeps the session's header as it was, and query() still refuses that tool", async () => {
+    if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
+    const { scoped, turns } = sessionEmit(true);
+    const run = async (withheld?: WithheldTool[]): Promise<CapturedOptions> => {
+      h.initId = ID;
+      try {
+        const invoke: Invoke = { ...invokeWithServer(["todo"], withheld), cliSession: { mode: "resume", id: ID } };
+        expect(await h.handler?.(invoke, scoped)).toBe("ok");
+      } finally {
+        h.initId = undefined;
+      }
+      const q = h.queries.at(-1);
+      if (q === undefined) throw new Error("no query");
+      return q.options;
+    };
+    const plain = await run();
+    const withheld = await run([{ server: "todo", tool: "export" }]);
+    // The header the session hashes: the conversation's own rules, the same on both turns, so the Router resumes.
+    const [first, second] = turns;
+    if (first === undefined || second === undefined) throw new Error("no session turns");
+    for (const header of [first.header, second.header]) {
+      expect(header).toMatchObject({ allowedTools: ["mcp__todo"], disallowedTools: [], tools: [] });
+      expect(header.canUseTool).toBeDefined();
+    }
+    expect(second.header.model).toBe(first.header.model);
+    // The resumed turn still refuses the withheld tool: query() gets the turn's own withholds.
+    expect(plain.disallowedTools).toBeUndefined();
+    expect(withheld).toMatchObject({ resume: ID, disallowedTools: ["mcp__todo__export"] });
+  });
+
   it("applied, but the CLI's first message is not the session's init: the turn fails and nothing is forwarded", async () => {
     if (h.handler === undefined) throw new Error("the worker entry never called serveNative");
     const { scoped, natives } = sessionEmit(true);
