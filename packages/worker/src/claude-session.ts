@@ -6,7 +6,7 @@
  * `resume` that carries the platform's record is checked against the stored session before the CLI starts, and the
  * CLI's first message must confirm the session. Every refusal THROWS, with the text a Router reads.
  *
- * NOT a boundary (infra-hardening's framing): this code runs inside the jail and the builder can change it. The checks
+ * NOT a boundary: this code runs inside the jail and the builder can change it. The checks
  * keep an honest worker's thread intact; isolation is the platform's (the thread folder bound alone, at
  * `<root>/projects/-session`, on folder turns only, and the Router's own stamp). A worker that skips or edits them can
  * only damage its own thread's session: a cwd other than the session folder starts clean, and ignoring the session
@@ -136,7 +136,7 @@ export function applyClaudeSession(turn: ClaudeSessionTurn): AppliedClaudeSessio
 
 /**
  * The Claude CLI's config root for a builder worker's resumable turn: an absolute path the platform's slot sets, after
- * the frame's env and never from it (infra-runtime names it: `@guuey-private/fs-contract` `ENV_CLI_CONFIG_DIR`; this is
+ * the frame's env and never from it (the runtime names it: `@guuey-private/fs-contract` `ENV_CLI_CONFIG_DIR`; this is
  * its published mirror). The worker only reads it.
  */
 export const CLAUDE_CLI_CONFIG_DIR_ENV = "GUUEY_CLI_CONFIG_DIR";

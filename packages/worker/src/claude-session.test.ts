@@ -1,6 +1,6 @@
 /**
  * guuey#3550: the ONE thread-resume sequence (`applyClaudeSession`), the builder worker's gate, and serveNative's
- * `claudeSession` opt-in. Infra-hardening's terms T1-T4 are pinned here:
+ * `claudeSession` opt-in. The isolation terms T1-T4 are pinned here:
  *  - T1: the id and environment checks read no file (an fs counter asserts zero reads);
  *  - T2: the hello block is the builder's claim; nothing here grants a folder, a thread or an app;
  *  - T3: the stored session is read under the cwd's real path only;
