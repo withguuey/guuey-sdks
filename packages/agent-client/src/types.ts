@@ -344,7 +344,14 @@ export type HistoryLoadResult =
        */
       order?: "desc" | "asc";
     }
-  | { gone: true };
+  | {
+      gone: true;
+      /**
+       * The status the read plane answered: 404 = the thread no longer exists (expired or deleted), 403 = it exists
+       * under another owner. Optional: a loader that does not say is read as before (the hook keeps its notice).
+       */
+      status?: 403 | 404;
+    };
 
 /**
  * The agent ended this conversation: it takes no new message, and the next

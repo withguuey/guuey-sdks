@@ -700,8 +700,9 @@ async function walkHistory(
  * plane that predates the order serves ascending pages and is read exactly as
  * before; one that stops honouring it mid-read is read again ascending.
  *
- * Returns `{ gone: true }` on 403/404 (a stale local threadId the caller no
- * longer owns / that no longer exists) so the hook can drop the persisted id;
+ * Returns `{ gone: true, status }` on 403/404 (a stale local threadId the
+ * caller no longer owns / that no longer exists) so the hook can drop the
+ * persisted id, and tell a thread that is gone from one owned by another;
  * throws on any other non-OK status, or a body that is not a page, so
  * `useAgentInvoke`'s best-effort caller can swallow it and leave the chat
  * empty.
@@ -792,7 +793,7 @@ async function readHistory(
   let walk = await walkHistory(routeUrl, new Set<HonouredEcho>(["order", ...askCalls]), include, requestInit, send);
   if (walk === "order-lost") walk = await walkHistory(routeUrl, new Set(askCalls), include, requestInit, send);
   if (walk === "order-lost") throw new Error("history load failed: an ascending read lost an order it never asked for");
-  if ("gone" in walk) return { gone: true };
+  if ("gone" in walk) return { gone: true, status: walk.gone };
   const rows = [...walk.rows.values()].sort((a, b) => a.seq - b.seq);
   const threadClosed = walk.closed ?? (walk.threadSeen ? undefined : closureFromLastRow(rows));
   return {

@@ -641,9 +641,15 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         threadIdRef.current = null;
         setThreadId(null);
         void adaptersRef.current.storage.save(threadStorageKey(appId), "");
-        // guuey#413: the hydration guard's LOUD half. `gone` covers 403 as
-        // well as 404 (history.ts) — an owner-mismatch refusal on a drifted
-        // identity flowed through THIS arm as a silent fresh-looking boot,
+        // A 404 is a thread that no longer exists (it expired or was
+        // deleted): nothing went wrong and nothing can be restored, so the
+        // fresh start is the whole answer, with no notice. Only a loader that
+        // SAYS 404 gets this; a 403, or a gone without a status (a loader that
+        // predates it), keeps the notice below.
+        if (result.status === 404) return;
+        // guuey#413: the hydration guard's LOUD half. A 403 (history.ts) is
+        // an owner-mismatch refusal: on a drifted identity it flowed through
+        // THIS arm as a silent fresh-looking boot,
         // which is the exact outage face this guard exists to kill. The
         // fresh mint stays (functional); the notice makes it honest. Loud
         // AND functional, never one without the other.

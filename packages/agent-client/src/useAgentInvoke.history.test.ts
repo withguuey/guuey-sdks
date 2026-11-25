@@ -14,6 +14,9 @@ describe("applyHistoryResult", () => {
   });
   it("gone → clear the persisted thread", () => {
     expect(applyHistoryResult({ gone: true }, [])).toEqual({ kind: "clear" });
+    // #3864: the status decides only the notice, never the clear.
+    expect(applyHistoryResult({ gone: true, status: 404 }, [])).toEqual({ kind: "clear" });
+    expect(applyHistoryResult({ gone: true, status: 403 }, [])).toEqual({ kind: "clear" });
   });
   it("skips when transcript is empty even if chat is untouched", () => {
     expect(applyHistoryResult({ messages: [] }, [])).toEqual({ kind: "skip" });

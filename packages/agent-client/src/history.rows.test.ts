@@ -86,10 +86,10 @@ describe("fetchThreadHistoryRows — the read, stopped at the rows", () => {
     expect(read.toolCallsHonoured).toBe(false);
   });
 
-  it("403 and 404 are gone, with the status; fetchThreadHistory's gone is unchanged", async () => {
+  it("403 and 404 are gone, with the status, from both readers", async () => {
     for (const code of [403, 404] as const) {
       expect(await fetchThreadHistoryRows({ ...ASKED, fetchImpl: status(code) })).toEqual({ gone: code });
-      expect(await fetchThreadHistory({ ...ASKED, fetchImpl: status(code) })).toEqual({ gone: true });
+      expect(await fetchThreadHistory({ ...ASKED, fetchImpl: status(code) })).toEqual({ gone: true, status: code });
     }
   });
 
@@ -118,7 +118,7 @@ describe("fetchThreadHistoryRows and fetchThreadHistory settle every walk alike"
   // so each outcome is read both ways and the rows result, projected, must be
   // fetchThreadHistory's result.
   function project(read: ThreadHistoryRowsResult) {
-    if ("gone" in read) return { gone: true };
+    if ("gone" in read) return { gone: true, status: read.gone };
     const { rows, toolCallsHonoured, ...tail } = read;
     return {
       messages: threadHistoryRowsToMessages(rows),

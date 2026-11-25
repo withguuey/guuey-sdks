@@ -172,7 +172,7 @@ describe("fetchThreadHistory", () => {
     expect(String(fetchImpl.mock.calls[1][0])).toContain("nextToken=p2");
   });
 
-  it("returns gone on 403 / 404", async () => {
+  it("returns gone on 403 / 404, with the status (mutant: drop the status)", async () => {
     for (const status of [403, 404]) {
       const fetchImpl = mockFetch([jsonResponse({}, status)]);
       const result = await fetchThreadHistory({
@@ -180,7 +180,7 @@ describe("fetchThreadHistory", () => {
         threadId: "t_1",
         fetchImpl,
       });
-      expect(result).toEqual({ gone: true });
+      expect(result).toEqual({ gone: true, status });
     }
   });
 
