@@ -72,10 +72,10 @@
  *   guuey test "hi" --bearer-stdin < user-token.txt   # signed in (file mode 0600)
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AgEvent } from '@silverprotocol/core';
+import { AGJSON_VERSION, AgEvent, type AgInput } from '@silverprotocol/core';
 import { resolveConfig, loadAmplifyOutputs } from '../config';
 import { getTestThreadsDir } from '../paths';
 import { requireAuth } from '../auth';
@@ -96,6 +96,46 @@ export interface InvokeBody {
   input: string;
   sessionId?: string;
   threadId?: string;
+}
+
+/**
+ * The same turn as a shape-2 body: silverprotocol's AgInput, `kind: "start"`, the one user message carrying the text,
+ * the session id in `metadata["guuey/sessionId"]` and the thread in the envelope's `threadId` (`""` on first contact),
+ * per the Router's R2 contract (rows 1, 8, 9, 10). `turnId` is the message's own id.
+ */
+export function shape2InvokeBody(body: InvokeBody, turnId: string = randomUUID()): AgInput {
+  return {
+    protocol: 'agjson',
+    version: AGJSON_VERSION,
+    kind: 'start',
+    threadId: body.threadId ?? '',
+    turnId,
+    messages: [{ id: turnId, role: 'user', content: [{ type: 'text', text: body.input }] }],
+    ...(body.sessionId !== undefined ? { metadata: { 'guuey/sessionId': body.sessionId } } : {}),
+  };
+}
+
+/**
+ * Whether a refusal is one of the two faces an endpoint that predates shape 2 gives a shape-2 body, the ONLY faces on
+ * which `guuey test` sends the same turn again as shape 1 (once), each matched EXACTLY: the Router's `400 {code:
+ * "INVALID_REQUEST", message: "input: non-empty string required"}`, and an older `guuey dev` server's `400 {"error": "body.input must be a string"}` with no code. Both are
+ * answered before the endpoint starts anything, so the second send cannot double a turn.
+ */
+export function isShape1FallbackFace(status: number, bodyText: string): boolean {
+  if (status !== 400) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    // A body that is not JSON is neither face: the refusal is reported as it is, never re-sent.
+    return false;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return false;
+  const code = 'code' in parsed ? parsed.code : undefined;
+  const message = 'message' in parsed ? parsed.message : undefined;
+  const error = 'error' in parsed ? parsed.error : undefined;
+  if (code === 'INVALID_REQUEST' && message === 'input: non-empty string required') return true;
+  return code === undefined && error === 'body.input must be a string';
 }
 
 /** MIRROR of the pod's `GUEST_HEADER_NAME` (`nocode-runtime/src/identity.ts`) — pinned in `test.test.ts`. */
@@ -381,8 +421,17 @@ export async function test(
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(threadFlag !== undefined ? { threadId: threadFlag } : {}),
   };
-  const { url, init } = buildInvokeRequest(endpoint, body, caller);
-  const { res, refusalText, retries } = await sendInvoke(url, init);
+  // Shape 2 first; an endpoint that predates it refuses with one of the two known faces, and then (once) shape 1.
+  const shape2 = buildInvokeRequest(endpoint, shape2InvokeBody(body), caller);
+  let sent = await sendInvoke(shape2.url, shape2.init);
+  if (!sent.res.ok && isShape1FallbackFace(sent.res.status, sent.refusalText ?? '')) {
+    console.error(
+      `  [shape] the endpoint predates shape 2 (HTTP ${sent.res.status}: ${redactCaller(sent.refusalText ?? '', caller).slice(0, 200)}): sending the same turn as shape 1`,
+    );
+    const shape1 = buildInvokeRequest(endpoint, body, caller);
+    sent = await sendInvoke(shape1.url, shape1.init);
+  }
+  const { res, refusalText, retries } = sent;
 
   if (!res.ok) {
     // Redact BEFORE the cut, so a token straddling the 400-char edge is never half-printed.
@@ -461,7 +510,7 @@ export function toInvokeUrl(endpointUrl: string): string {
  */
 export function buildInvokeRequest(
   endpoint: string,
-  body: InvokeBody,
+  body: InvokeBody | AgInput,
   caller: InvokeCaller,
 ): { url: string; init: RequestInit } {
   let credential: Record<string, string>;

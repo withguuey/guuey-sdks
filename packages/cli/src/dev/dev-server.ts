@@ -37,6 +37,7 @@ import { endThreadProblem, type EndThread, type WorkerEvent } from "@guuey/worke
 import { colocatedResourceUrl, type GuueyAgent, type GuueyAgentMcpServer } from "@guuey/config";
 import type { Normalizer } from "@silverprotocol/core";
 import { createLocalDriver, type LocalRunInput } from "./local-driver.js";
+import { DevShape2Refused, invokeShapeOf, parseDevShape2 } from "./invoke-shape2.js";
 import { makeHelloGatedNormalizer } from "./normalize.js";
 
 /** Local dev-loop's default `ggui serve` MCP endpoint — mirrors the platform
@@ -340,6 +341,19 @@ async function readInvokeBody(
   if (typeof parsed !== "object" || parsed === null) {
     throw new Error("body must be a JSON object");
   }
+  // Shape 2 (silverprotocol's AgInput) is detected by its own `protocol` member, as the Router does (its R2 contract
+  // §1.1). A body with both shapes' members is refused; a body with neither keeps today's face below, the one a 0.38
+  // client falls back on.
+  const shape = invokeShapeOf(parsed);
+  if (shape === "ambiguous") throw new DevShape2Refused("invoke_shape_ambiguous: protocol and input");
+  if (shape === "shape2") {
+    const turn = parseDevShape2(parsed);
+    if (turn.notDelivered > 0) {
+      console.warn(`guuey dev: ${String(turn.notDelivered)} content or context blocks not delivered locally (text only)`);
+    }
+    if (turn.resume) console.warn("guuey dev: a resume runs locally as an empty turn (its answers are not delivered)");
+    return { input: turn.input, sessionId: turn.sessionId };
+  }
   const obj = parsed as Record<string, unknown>;
   if (typeof obj.input !== "string") {
     throw new Error("body.input must be a string");
@@ -503,7 +517,14 @@ async function handleInvoke(
     body = await readInvokeBody(req);
   } catch (err) {
     res.writeHead(400, { "Content-Type": "application/json", ...CORS_HEADERS });
-    res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+    // A shape-2 refusal answers with the Router's own face; every shape-1 refusal keeps today's `{error}` bytes.
+    res.end(
+      JSON.stringify(
+        err instanceof DevShape2Refused
+          ? { code: err.code, message: err.message }
+          : { error: err instanceof Error ? err.message : String(err) },
+      ),
+    );
     return;
   }
 

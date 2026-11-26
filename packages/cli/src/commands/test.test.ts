@@ -28,6 +28,8 @@ import {
   bearerArgvRefusal,
   BearerInputError,
   buildInvokeRequest,
+  isShape1FallbackFace,
+  shape2InvokeBody,
   GUEST_HEADER_NAME,
   INVOKE_RETRY_BUDGET_MS,
   invokeRetryWait,
@@ -48,6 +50,7 @@ import {
   toInvokeUrl,
 } from './test.js';
 import type { BearerInput } from './test.js';
+import { checkAgInput } from '@silverprotocol/core';
 import type { resolveConfig } from '../config.js';
 import { parseInterfaceFields } from '../wire-mirror-parse';
 
@@ -477,6 +480,23 @@ describe('resolveAgentEndpoint', () => {
   });
 });
 
+/**
+ * The turn a sent shape-2 body carries, in shape 1's terms (its text, its thread when not `""`, its session id), so
+ * the end-to-end rows keep asserting what the endpoint is told, whichever shape carried it.
+ */
+function turnOf(raw: unknown): { input: string; threadId?: string; sessionId?: string } {
+  const checked = checkAgInput(raw);
+  if (!checked.ok || checked.input.kind !== 'start') throw new Error('not a shape-2 start body');
+  const { input } = checked;
+  const text = (input.messages[0]?.content ?? []).flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n\n');
+  const sessionId = input.metadata?.['guuey/sessionId'];
+  return {
+    input: text,
+    ...(input.threadId !== '' ? { threadId: input.threadId } : {}),
+    ...(typeof sessionId === 'string' ? { sessionId } : {}),
+  };
+}
+
 describe('guuey test --thread / --app-id — the command end to end (guuey#1600)', () => {
   let fetchSpy: MockInstance<typeof fetch>;
   let exitSpy: MockInstance<typeof process.exit>;
@@ -520,9 +540,10 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
     const req = sent();
     expect(req.url).toBe('https://pod.example/agent/invoke');
     expect(isGuestSecret(req.headers.get(GUEST_HEADER_NAME) ?? '')).toBe(true);
-    expect(req.body['threadId']).toBeUndefined();
+    expect(req.body['protocol']).toBe('agjson');
+    expect(turnOf(req.body).threadId).toBeUndefined();
     // Turn 1 and the --thread turns after it must share ONE session (one session.ended).
-    expect(req.body).not.toHaveProperty('sessionId');
+    expect(turnOf(req.body)).not.toHaveProperty('sessionId');
     expect(loadThreadSecret('app-1', 't-new', threadsDir.current)).toBe(req.headers.get(GUEST_HEADER_NAME));
     expect(logs.join('\n')).toContain('--thread t-new');
   });
@@ -533,18 +554,48 @@ describe('guuey test --thread / --app-id — the command end to end (guuey#1600)
     await testCommand('and again', { url: 'https://pod.example', thread: 't-new' });
     const req = sent();
     expect(req.headers.get(GUEST_HEADER_NAME)).toBe(SECRET);
-    expect(req.body).toEqual({ input: 'and again', threadId: 't-new' });
+    expect(turnOf(req.body)).toEqual({ input: 'and again', threadId: 't-new' });
     expect(logs.join('\n')).not.toContain('NEW thread');
   });
 
   it('an explicit --session still wins, on turn 1 and on a --thread turn', async () => {
     fetchSpy.mockResolvedValueOnce(podAnswer('t-s'));
     await testCommand('hello', { url: 'https://pod.example', session: 'sess-explicit' });
-    expect(sent().body['sessionId']).toBe('sess-explicit');
+    expect(turnOf(sent().body).sessionId).toBe('sess-explicit');
     saveThreadSecret('app-1', 't-s', SECRET, threadsDir.current);
     fetchSpy.mockResolvedValueOnce(podAnswer('t-s'));
     await testCommand('again', { url: 'https://pod.example', thread: 't-s', session: 'sess-explicit' });
-    expect(sent(1).body).toEqual({ input: 'again', sessionId: 'sess-explicit', threadId: 't-s' });
+    expect(turnOf(sent(1).body)).toEqual({ input: 'again', sessionId: 'sess-explicit', threadId: 't-s' });
+  });
+
+  it('an endpoint that predates shape 2: its fallback face, then the SAME turn ONCE as shape 1', async () => {
+    const oldFace = { code: 'INVALID_REQUEST', message: 'input: non-empty string required' };
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(oldFace), { status: 400, statusText: 'Bad Request' }));
+    fetchSpy.mockResolvedValueOnce(podAnswer('t-old'));
+    await testCommand('hello', { url: 'https://pod.example' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(sent(0).body['protocol']).toBe('agjson');
+    expect(sent(1).body).toEqual({ input: 'hello' });
+    expect(sent(1).headers.get(GUEST_HEADER_NAME)).toBe(sent(0).headers.get(GUEST_HEADER_NAME));
+  });
+
+  it("an older guuey dev server: its own face, then the SAME turn ONCE as shape 1", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response('{"error":"body.input must be a string"}', { status: 400, statusText: 'Bad Request' }),
+    );
+    fetchSpy.mockResolvedValueOnce(podAnswer('t-dev'));
+    await testCommand('hello', { url: 'https://pod.example' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(sent(0).body['protocol']).toBe('agjson');
+    expect(sent(1).body).toEqual({ input: 'hello' });
+  });
+
+  it('any other refusal of the shape-2 body is reported as it is, never re-sent', async () => {
+    const refusal = { code: 'INVALID_REQUEST', message: 'agjson: version: major-mismatch' };
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify(refusal), { status: 400, statusText: 'Bad Request' }));
+    await expect(testCommand('hello', { url: 'https://pod.example' })).rejects.toThrow(ExitSignal);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(errors.join('\n')).toContain('agjson: version: major-mismatch');
   });
 
   it('--thread with no saved visitor on this machine is refused BEFORE any network call', async () => {
@@ -754,7 +805,7 @@ describe('guuey test --bearer-stdin — the command end to end (guuey#2719)', ()
     const req = sent();
     expect(req.headers.get('authorization')).toBe(`Bearer ${PLANT}`);
     expect(req.headers.has(GUEST_HEADER_NAME)).toBe(false);
-    expect(JSON.parse(req.body)).toEqual({ input: 'hello' });
+    expect(turnOf(JSON.parse(req.body))).toEqual({ input: 'hello' });
     expect(existsSync(join(threadsDir.current, 'app-1'))).toBe(false);
     const all = printed.join('\n');
     expect(all).toContain('  Auth:     bearer (user token from stdin)');
@@ -768,7 +819,7 @@ describe('guuey test --bearer-stdin — the command end to end (guuey#2719)', ()
   it('--thread needs no saved visitor: the pod keys a signed-in thread to the subject', async () => {
     fetchSpy.mockResolvedValueOnce(signedInAnswer('t-s1'));
     await testCommand('again', { url: 'https://pod.example', thread: 't-s1', 'bearer-stdin': true }, { stdin: stdinOf([PLANT]) });
-    expect(JSON.parse(sent().body)).toEqual({ input: 'again', threadId: 't-s1' });
+    expect(turnOf(JSON.parse(sent().body))).toEqual({ input: 'again', threadId: 't-s1' });
     expect(printed.join('\n')).not.toContain('No visitor identity saved');
   });
 
@@ -1061,6 +1112,36 @@ describe('asMeHeldRefusal — --as-me says it is not available yet, with or with
       expect(printed.join('\n')).toContain(held);
     } finally {
       vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('guuey test sends shape 2 first, and shape 1 once on an endpoint that predates it', () => {
+  it('the shape-2 body is a valid AgInput start carrying the turn text, session id and thread', () => {
+    const first = shape2InvokeBody({ input: 'hello' }, 'turn-1');
+    expect(checkAgInput(first).ok).toBe(true);
+    expect(first).toMatchObject({ kind: 'start', threadId: '', turnId: 'turn-1' });
+    expect(first.kind === 'start' ? first.messages : []).toEqual([
+      { id: 'turn-1', role: 'user', content: [{ type: 'text', text: 'hello' }] },
+    ]);
+    expect('metadata' in first).toBe(false);
+    const follow = shape2InvokeBody({ input: 'again', sessionId: 's-1', threadId: 't-1' }, 'turn-2');
+    expect(checkAgInput(follow).ok).toBe(true);
+    expect(follow).toMatchObject({ threadId: 't-1', metadata: { 'guuey/sessionId': 's-1' } });
+  });
+  it('falls back ONLY on the two faces of an endpoint that predates shape 2', () => {
+    expect(isShape1FallbackFace(400, JSON.stringify({ code: 'INVALID_REQUEST', message: 'input: non-empty string required' }))).toBe(true);
+    expect(isShape1FallbackFace(400, JSON.stringify({ error: 'body.input must be a string' }))).toBe(true);
+    for (const [status, body] of [
+      [400, JSON.stringify({ code: 'INVALID_REQUEST', message: 'agjson: version: major-mismatch' })],
+      [400, JSON.stringify({ code: 'INVALID_REQUEST', message: 'invoke_shape_ambiguous: sessionId' })],
+      [400, JSON.stringify({ code: 'OTHER', error: 'body.input must be a string' })],
+      [400, JSON.stringify({ error: 'body must be a JSON object' })],
+      [503, JSON.stringify({ code: 'INVALID_REQUEST', message: 'input: non-empty string required' })],
+      [400, JSON.stringify({ code: 'INVALID_REQUEST', message: 'input: exceeds the limit' })],
+      [400, 'input: not json'],
+    ] as Array<[number, string]>) {
+      expect(isShape1FallbackFace(status, body), `${status} ${body}`).toBe(false);
     }
   });
 });

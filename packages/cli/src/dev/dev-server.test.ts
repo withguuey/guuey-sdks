@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { AGJSON_VERSION } from "@silverprotocol/core";
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1114,5 +1115,56 @@ describe("a worker ends its conversation (guuey#2409)", { timeout: 20_000 }, () 
       thread: unknown;
     };
     expect(body.thread).toEqual({});
+  });
+});
+
+describe("startDevServer: shape 2 (silverprotocol AgInput), to the Router's contract", () => {
+  async function boot(): Promise<number> {
+    srv = await startDevServer({
+      port: 0,
+      framework: "fixture",
+      protocol: "bypass",
+      workerCommand: process.execPath,
+      workerArgs: [echoFixture],
+      agentSnapshotJson: "{}",
+      projectRoot: freshProjectRoot(),
+    });
+    return srv.port;
+  }
+  const post = (port: number, body: string) =>
+    fetch(`http://localhost:${port}/agent/invoke`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const start = {
+    protocol: "agjson",
+    version: AGJSON_VERSION,
+    kind: "start",
+    threadId: "",
+    turnId: "m1",
+    messages: [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }] }],
+  };
+
+  it("a shape-2 start body runs the turn", async () => {
+    const res = await post(await boot(), JSON.stringify(start));
+    const text = await res.text();
+    expect(res.status).toBe(200);
+    expect(text).toMatch(/^event: session\n/);
+    expect(text).toMatch(/event: done\ndata: \{"stopReason":"end_turn"\}/);
+  });
+
+  it("a body with both shapes' members is the Router's ambiguity face", async () => {
+    const res = await post(await boot(), JSON.stringify({ ...start, input: "hi" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ code: "INVALID_REQUEST", message: "invoke_shape_ambiguous: protocol and input" });
+  });
+
+  it("a shape-2 refusal is the Router's face with its prefix, never the fallback face", async () => {
+    const res = await post(await boot(), JSON.stringify({ ...start, version: "9.0.0" }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ code: "INVALID_REQUEST", message: "agjson: version: major-mismatch" });
+  });
+
+  it("N-1: a body with neither member keeps today's face, byte for byte (a 0.38 client's fallback trigger)", async () => {
+    const res = await post(await boot(), JSON.stringify({ messages: [] }));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toBe('{"error":"body.input must be a string"}');
   });
 });
