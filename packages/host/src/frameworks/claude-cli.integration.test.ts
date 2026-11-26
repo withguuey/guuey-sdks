@@ -25,18 +25,32 @@
  * Linux-only sub-assertions (procfs) are skipped elsewhere with that reason;
  * everything else runs on every platform the pinned CLI ships for.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { query as realQuery, type Options, type SDKUserMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
-import { createEmitter, type WorkerEvent } from "@guuey/worker";
+import { query as realQuery, type Options, type SDKMessage, type SDKUserMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import {
+  applyClaudeSession,
+  createEmitter,
+  type AnthropicUserBlock,
+  type HelloCliSession,
+  type JsonValue,
+  type WorkerEvent,
+} from "@guuey/worker";
+
+/** One JSON object (a session-file line), as `JSON.parse` gives it. */
+type JsonObject = { readonly [key: string]: JsonValue };
+function isJsonObject(v: JsonValue): v is JsonObject {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+import { hostPathEnvOf } from "./claude-options.js";
 import { runInvoke, type HostInvoke, type QueryFn, type QueryHandle } from "./claude.js";
 
 const LINUX = process.platform === "linux";
@@ -55,6 +69,9 @@ interface UpstreamRequest {
   toolNames: string[];
   /** Whether the request's system prompt or messages carry a planted marker (set by `startFakeUpstream`'s `marker`). */
   carriesMarker: boolean;
+  /** The request's `system` and `messages` as JSON, for the resume case's own markers (synthetic only). */
+  system: string;
+  messages: string;
   at: number;
 }
 
@@ -176,6 +193,8 @@ async function startFakeUpstream(key: string, bashCommand: string | undefined, t
         authorizationPresent: req.headers.authorization !== undefined,
         toolNames: (body.tools ?? []).map((t) => t.name ?? ""),
         carriesMarker: marker !== undefined && JSON.stringify({ system: body.system, messages: body.messages }).includes(marker),
+        system: JSON.stringify(body.system ?? ""),
+        messages: JSON.stringify(body.messages ?? []),
         at: Date.now(),
       });
       const events = main && bashCommand !== undefined && !hasToolResult(body) ? bashTurn(bashCommand) : textTurn("done");
@@ -760,5 +779,333 @@ describe("real Claude CLI: a planted .claude.json does not steer the turn (fresh
         await planted.close();
       }
     });
+  }
+});
+
+/**
+ * A PIN of the pinned CLI's behaviour: a RESUMED Claude CLI session keeps the system
+ * prompt it STARTED with. The system prompt a resumed turn passes does not reach the model, so the platform cannot keep
+ * a conversation across a prompt change: a changed prompt has to start the conversation over (the `system-prompt`
+ * reset). Measured first as a RED of the opposite claim: the resumed request carried prompt A,
+ * never prompt B. A CLI or SDK bump that changes this turns the pin RED, and the platform's rule is then re-decided
+ * on that evidence.
+ *
+ * Turn 1 starts a session under prompt A; turn 2 resumes it under prompt B. Both run the real pinned CLI through the
+ * real SDK `query()`, with the options @guuey/worker's one sequence (`applyClaudeSession`) gives a platform turn: the
+ * session id or resume id, `persistSession: true`, the config root as `CLAUDE_CONFIG_DIR` and the session folder as
+ * the cwd. Asserted: each turn's first message confirms its session; the resumed request carries prompt A in `system`
+ * and never prompt B; its messages carry turn 1's text (the transcript was resumed, not re-sent); and the stored file
+ * passes the worker's own resume check against each turn's record, before and after the resume.
+ */
+describe("real Claude CLI: a resumed session keeps its FIRST system prompt (pinned CLI behaviour)", () => {
+  // The second case is the CONTROL: the same prompt on both turns (a plain resume), so a session-file finding after the
+  // resume is told apart from an effect of the prompt change.
+  for (const samePrompt of [false, true]) {
+    it(
+      samePrompt
+        ? "control: the same prompt starts and resumes the session; the resumed request carries it, and turn 1 is in the transcript"
+        : "prompt A starts the session and prompt B resumes it: the resumed request still carries A, never B, and turn 1 is in the transcript",
+      { timeout: TURN_BUDGET_MS * 2 },
+      async () => {
+        const sdkEntry = createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk");
+        const pinned = createRequire(sdkEntry).resolve(`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude`);
+        const key = sentinel();
+        const { fs, root } = turnDirs();
+        const cliDirs = {
+          config: join(root, "cli", "config"),
+          cache: join(root, "cli", "cache"),
+          xdgConfig: join(root, "cli", "xdg-config"),
+          xdgData: join(root, "cli", "xdg-data"),
+          xdgState: join(root, "cli", "xdg-state"),
+        };
+        for (const dir of Object.values(cliDirs)) mkdirSync(dir, { recursive: true });
+        const id = randomUUID();
+        const tag = (what: string): string => `${what}-${randomBytes(6).toString("hex")}`;
+        const promptA = `${MAIN_MARKER}: ${tag("PROMPT-A")}. Answer briefly.`;
+        const promptB = samePrompt ? promptA : `${MAIN_MARKER}: ${tag("PROMPT-B")}. Answer briefly.`;
+        const textA = tag("USER-TURN-1");
+        const textB = tag("USER-TURN-2");
+        const upstream = await startFakeUpstream(key, undefined);
+
+        const env = {
+          ...hostPathEnvOf(process.env),
+          HOME: fs.home,
+          CLAUDE_CONFIG_DIR: cliDirs.config,
+          XDG_CACHE_HOME: cliDirs.cache,
+          XDG_CONFIG_HOME: cliDirs.xdgConfig,
+          XDG_DATA_HOME: cliDirs.xdgData,
+          XDG_STATE_HOME: cliDirs.xdgState,
+          ANTHROPIC_BASE_URL: upstream.url,
+          ANTHROPIC_API_KEY: key,
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        };
+
+        /** The worker's sequence for one turn (no CLI run): its hello block, or the refusal it throws. */
+        const apply = (mode: "start" | "resume", systemPrompt: string, text: string, expectLastPromptSha?: string) => {
+          const content: AnthropicUserBlock[] = [{ type: "text", text }];
+          let block: HelloCliSession | undefined;
+          const applied = applyClaudeSession({
+            session: { mode, id, ...(expectLastPromptSha !== undefined ? { expectLastPromptSha } : {}) },
+            systemPrompt,
+            header: { tools: [] },
+            servers: {},
+            content,
+            configDir: cliDirs.config,
+            cwd: fs.session,
+            hello: (b) => {
+              block = b;
+            },
+          });
+          if (block === undefined) throw new Error("applyClaudeSession sent no hello");
+          return { applied, block, content };
+        };
+
+        /**
+         * The session file's shape, COUNTS ONLY (it holds prompt text): its lines, the lines that are not JSON, and
+         * whether it ends in a newline. The CLI writes it under `<config>/projects/<slug(cwd)>/<id>.jsonl`.
+         */
+        const sessionFilePath = (): string | undefined => {
+          const projects = join(cliDirs.config, "projects");
+          const dir = existsSync(projects)
+            ? readdirSync(projects).find((name) => existsSync(join(projects, name, `${id}.jsonl`)))
+            : undefined;
+          return dir === undefined ? undefined : join(projects, dir, `${id}.jsonl`);
+        };
+
+        /**
+         * The session file's entry graph, STRUCTURE ONLY (no text): per line, its `type` and `subtype` (the CLI's own
+         * constants), its parent and logical parent as the LINE INDEX of the entry they name (`none` when unset,
+         * `missing` when no line has that uuid), whether it is a sidechain, and whether it is a leaf (an entry no other
+         * entry names as parent).
+         */
+        const sessionFileGraph = () => {
+          const path = sessionFilePath();
+          if (path === undefined) return "absent";
+          const parsed = readFileSync(path, "utf8")
+            .split("\n")
+            .filter((line) => line.length > 0)
+            .map((line): JsonObject | null => {
+              let value: JsonValue;
+              try {
+                value = JSON.parse(line) as JsonValue;
+              } catch {
+                return null;
+              }
+              return isJsonObject(value) ? value : null;
+            });
+          const indexOf = new Map<string, number>();
+          parsed.forEach((p, i) => {
+            if (p !== null && typeof p.uuid === "string" && !indexOf.has(p.uuid)) indexOf.set(p.uuid, i);
+          });
+          const parentIndexes = new Set<number>();
+          const link = (v: JsonValue | undefined): number | "none" | "missing" => {
+            if (typeof v !== "string") return "none";
+            const at = indexOf.get(v);
+            if (at === undefined) return "missing";
+            parentIndexes.add(at);
+            return at;
+          };
+          const rows = parsed.map((p, i) =>
+            p === null
+              ? { i, type: "NOT-JSON" }
+              : {
+                  i,
+                  type: typeof p.type === "string" ? p.type : "?",
+                  ...(typeof p.subtype === "string" ? { subtype: p.subtype } : {}),
+                  uuid: typeof p.uuid === "string",
+                  parent: link(p.parentUuid),
+                  ...(p.logicalParentUuid !== undefined ? { logicalParent: link(p.logicalParentUuid) } : {}),
+                  ...(p.isSidechain === true ? { sidechain: true } : {}),
+                },
+          );
+          return rows.map((r) => ("uuid" in r && r.uuid ? { ...r, leaf: !parentIndexes.has(r.i) } : r));
+        };
+
+        const sessionFileCounts = (): { lines: number; notJson: number; endsInNewline: boolean } | "absent" => {
+          const path = sessionFilePath();
+          if (path === undefined) return "absent";
+          const raw = readFileSync(path, "utf8");
+          const lines = raw.split("\n").filter((line) => line.length > 0);
+          const notJson = lines.filter((line) => {
+            try {
+              JSON.parse(line);
+              return false;
+            } catch {
+              return true;
+            }
+          }).length;
+          return { lines: lines.length, notJson, endsInNewline: raw.endsWith("\n") };
+        };
+
+        /** One real turn: the applied session's options, the one user message held open until the result. */
+        const run = async (mode: "start" | "resume", systemPrompt: string, text: string, expectLastPromptSha?: string) => {
+          const { applied, block, content } = apply(mode, systemPrompt, text, expectLastPromptSha);
+          let endInput!: () => void;
+          const inputDone = new Promise<void>((resolve) => (endInput = resolve));
+          async function* prompt(): AsyncGenerator<SDKUserMessage> {
+            yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null };
+            await inputDone;
+          }
+          // The CLI's own process, so the file is measured once the CLI has EXITED, not only when its stream ended.
+          let exited: Promise<void> | undefined;
+          const options: Options = {
+            systemPrompt,
+            tools: [],
+            settingSources: [],
+            strictMcpConfig: true,
+            cwd: fs.session,
+            pathToClaudeCodeExecutable: pinned,
+            env,
+            persistSession: true,
+            ...applied.options,
+            spawnClaudeCodeProcess: (request: SpawnOptions) => {
+              const child = spawn(request.command, request.args, {
+                cwd: request.cwd,
+                env: request.env,
+                signal: request.signal,
+                stdio: ["pipe", "pipe", "ignore"],
+              });
+              exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+              return child;
+            },
+          };
+          const q = realQuery({ prompt: prompt(), options });
+          let confirm: string | undefined;
+          let confirmed = false;
+          let result: SDKMessage | undefined;
+          try {
+            for await (const message of q) {
+              if (!confirmed) {
+                confirm = applied.confirmFirst(message);
+                confirmed = true;
+              }
+              if (message.type === "result") {
+                result = message;
+                endInput();
+              }
+            }
+          } finally {
+            endInput();
+          }
+          const atStreamEnd = sessionFileCounts();
+          if (exited === undefined) throw new Error("the SDK spawned no CLI process");
+          await exited;
+          const afterExit = sessionFileCounts();
+          return { block, confirmed, confirm, result, file: { atStreamEnd, afterExit } };
+        };
+
+        try {
+          const before = upstream.requests.length;
+          const t1 = await run("start", promptA, textA);
+          const mid = upstream.requests.length;
+          const t2 = await run("resume", promptB, textB, t1.block.lastPromptSha);
+          const turn1 = upstream.requests.slice(before, mid).filter((r) => r.main);
+          const turn2 = upstream.requests.slice(mid).filter((r) => r.main);
+
+          // (i) Each turn's first message confirms its session (a resume: the init of exactly this id); both succeed.
+          const outcome = (t: typeof t1) => ({
+            confirmed: t.confirmed ? (t.confirm ?? "yes") : "no first message",
+            result: t.result?.type === "result" ? t.result.subtype : "none",
+          });
+          expect({ start: outcome(t1), resume: outcome(t2) }).toEqual({
+            start: { confirmed: "yes", result: "success" },
+            resume: { confirmed: "yes", result: "success" },
+          });
+
+          // Counts only (the markers are synthetic), so a failure's diff shows which prompt and which turn texts each
+          // turn's main-conversation requests carried.
+          const counts = (requests: UpstreamRequest[]) => ({
+            requests: requests.length,
+            withPromptA: requests.filter((r) => r.system.includes(promptA)).length,
+            withPromptB: requests.filter((r) => r.system.includes(promptB)).length,
+            withTurn1Text: requests.filter((r) => r.messages.includes(textA)).length,
+            withTurn2Text: requests.filter((r) => r.messages.includes(textB)).length,
+          });
+          expect(turn1.length).toBeGreaterThan(0);
+          expect(turn2.length).toBeGreaterThan(0);
+          // Turn 1 ran under prompt A, with its own text only.
+          expect(counts(turn1)).toEqual({
+            requests: turn1.length,
+            withPromptA: turn1.length,
+            withPromptB: samePrompt ? turn1.length : 0,
+            withTurn1Text: turn1.length,
+            withTurn2Text: 0,
+          });
+          // (ii) The PIN: the resumed turn's requests still carry the session's FIRST prompt A and never the turn's prompt
+          // B; (iii) their messages carry turn 1's text as well as its own: the transcript was resumed, not re-sent.
+          expect(counts(turn2)).toEqual({
+            requests: turn2.length,
+            withPromptA: turn2.length,
+            withPromptB: samePrompt ? turn2.length : 0,
+            withTurn1Text: turn2.length,
+            withTurn2Text: turn2.length,
+          });
+
+          // The session file once each turn's CLI has EXITED: every line JSON and the file ending in a newline. The
+          // counts at stream end are printed beside it (counts only), so a CLI still writing when its stream ends shows
+          // as a stream-end difference, not as a broken file.
+          process.stdout.write(`[resume-pin] session file counts ${JSON.stringify({ start: t1.file, resume: t2.file })}\n`);
+          process.stdout.write(`[resume-pin] graph after resume ${JSON.stringify(sessionFileGraph())}\n`);
+          const clean = (f: ReturnType<typeof sessionFileCounts>) =>
+            f === "absent" ? "absent" : { notJson: f.notJson, endsInNewline: f.endsInNewline };
+          expect({ start: clean(t1.file.afterExit), resume: clean(t2.file.afterExit) }).toEqual({
+            start: { notJson: 0, endsInNewline: true },
+            resume: { notJson: 0, endsInNewline: true },
+          });
+
+          // (iv) The worker's own resume check passes on the stored file, before the resume (turn 2's hello, which
+          // measured it against turn 1's record) and after it (a check against turn 2's record, no CLI run). The check
+          // after it went RED until the measure read the resume's system/informational entry as a link (guuey#3971).
+          expect(t2.block.stored?.readError).toBeUndefined();
+          expect(t2.block.stored?.unclassified).toBe(0);
+          expect(t2.block.stored?.corrupt).toBe(0);
+          // The check after the resume, against turn 2's record. Its measures are kept even when it refuses (the hello is
+          // sent before the stored-session check), and printed as counts only, so a refusal says which measure broke.
+          let afterStored: HelloCliSession["stored"];
+          let afterRefusal: string | undefined;
+          try {
+            applyClaudeSession({
+              session: { mode: "resume", id, expectLastPromptSha: t2.block.lastPromptSha },
+              systemPrompt: promptB,
+              header: { tools: [] },
+              servers: {},
+              content: [{ type: "text", text: tag("USER-TURN-3") }],
+              configDir: cliDirs.config,
+              cwd: fs.session,
+              hello: (b) => {
+                afterStored = b.stored;
+              },
+            });
+          } catch (err) {
+            afterRefusal = err instanceof Error ? err.message : String(err);
+          }
+          const measures = (s: HelloCliSession["stored"]) =>
+            s === undefined
+              ? "none"
+              : {
+                  readError: s.readError ?? "none",
+                  corrupt: s.corrupt,
+                  unclassified: s.unclassified,
+                  walks: s.walks.length,
+                  walksFromLastPromptLeaf: s.walks.filter((w) => w.fromLastPromptLeaf).length,
+                  benignDuplicates: s.benignDuplicates,
+                  filePromptEntries: s.filePromptEntries,
+                  lastPrompts: s.lastPromptShas.length,
+                  sessionIds: s.sessionIds?.length ?? 0,
+                };
+          process.stdout.write(
+            `[resume-pin] stored measures ${JSON.stringify({ beforeResume: measures(t2.block.stored), afterResume: measures(afterStored) })}\n`,
+          );
+          expect({ refusal: afterRefusal ?? "none", readError: afterStored?.readError ?? "none" }).toEqual({
+            refusal: "none",
+            readError: "none",
+          });
+          expect(afterStored?.unclassified).toBe(0);
+          expect(afterStored?.corrupt).toBe(0);
+        } finally {
+          await upstream.close();
+        }
+      },
+    );
   }
 });
