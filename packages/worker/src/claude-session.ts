@@ -50,6 +50,27 @@ export function cliSessionUnconfirmedMessage(firstMessage: string): string {
   return `${CLI_SESSION_RESUME_FAILED}: the CLI's first message was ${firstMessage}, not the init of the session sent`;
 }
 
+/** Which of the three resume failures above an `error` is: the one parse of the format those builders write. */
+export type CliSessionFailureKind = "refused" | "not-applied" | "unconfirmed";
+
+const UNCONFIRMED_HEAD = `${CLI_SESSION_RESUME_FAILED}: the CLI's first message was `;
+const UNCONFIRMED_TAIL = ", not the init of the session sent";
+
+/**
+ * The kind of a resume failure, read from the turn's `error` exactly as {@link cliSessionRefusedMessage},
+ * {@link cliSessionNotAppliedMessage} or {@link cliSessionUnconfirmedMessage} wrote it. `undefined` when the message is
+ * none of the three, including a message with the {@link CLI_SESSION_RESUME_FAILED} prefix and an unknown tail, which a
+ * Router treats as a real break (no retry): fail-closed.
+ */
+export function cliSessionFailureKindOf(message: string): CliSessionFailureKind | undefined {
+  if (message.startsWith(`${CLI_SESSION_RESUME_FAILED}: refused (`) && message.endsWith(")")) return "refused";
+  if (message.startsWith(`${CLI_SESSION_RESUME_FAILED}: not applied (`) && message.endsWith(")")) return "not-applied";
+  if (message.startsWith(UNCONFIRMED_HEAD) && message.endsWith(UNCONFIRMED_TAIL)) {
+    return message.length > UNCONFIRMED_HEAD.length + UNCONFIRMED_TAIL.length ? "unconfirmed" : undefined;
+  }
+  return undefined;
+}
+
 /** The fields of one SDK message the first-message confirm reads. */
 export interface ClaudeSessionMessage {
   readonly type: string;
