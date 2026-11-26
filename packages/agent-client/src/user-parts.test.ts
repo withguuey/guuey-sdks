@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeUserPartRefusal,
+  MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN,
   MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
   MEDIA_INBOUND_MAX_PARTS_PER_TURN,
   MEDIA_INBOUND_MAX_STORAGE_REFS_PER_TURN,
@@ -130,12 +131,20 @@ describe("validateUserParts — every refusal", () => {
     expect(validateUserParts([inline("image", "image/png", half), inline("document", "application/pdf", half)], ON_THREAD).ok).toBe(true);
   });
 
-  it("too_many: at most 4 images, and at most ONE audio part", () => {
+  it("too_many: at most 4 images", () => {
     const images = Array.from({ length: MEDIA_INBOUND_MAX_IMAGES_PER_TURN + 1 }, () => inline("image", "image/png"));
     expect(refusalOf(images)).toEqual({ reason: "too_many", kind: "image", max: MEDIA_INBOUND_MAX_IMAGES_PER_TURN });
     expect(validateUserParts(images.slice(1), ON_THREAD).ok).toBe(true);
-    expect(refusalOf([inline("audio", "audio/wav"), inline("audio", "audio/mpeg")])).toEqual({ reason: "too_many", kind: "audio", max: 1 });
-    expect(validateUserParts([inline("audio", "audio/wav")], ON_THREAD).ok).toBe(true);
+  });
+
+  it("too_many: at most ONE audio part, inline or not (2 refused, 1 passes)", () => {
+    expect(MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN).toBe(1);
+    expect(refusalOf([inline("audio", "audio/wav"), link("audio", "https://files.example/b.mp3")])).toEqual({
+      reason: "too_many",
+      kind: "audio",
+      max: MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN,
+    });
+    expect(validateUserParts([inline("audio", "audio/wav"), inline("image", "image/png")], ON_THREAD).ok).toBe(true);
   });
 
   it("too_many_parts: at most 16 parts of every kind together", () => {

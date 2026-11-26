@@ -9,7 +9,7 @@
  * never trusts this one.
  *
  * The rules (the caps are {@link MEDIA_INBOUND_MAX_PARTS_PER_TURN} and its neighbours):
- *  - at most 16 parts per turn, of them at most 4 images and 1 audio part;
+ *  - at most 16 parts per turn, of them at most 4 images and 1 audio part (one cap each, as the runtime's);
  *  - every inline (`base64`) part shares ONE room of 6,000,000 base64 characters, with 5,000,000 per part, and names
  *    its `mediaType`;
  *  - a link is `https` and at most {@link PART_URL_MAX_CHARS} characters;
@@ -56,14 +56,15 @@ export const MEDIA_INBOUND_MAX_STORAGE_REFS_PER_TURN = 5;
 /** At most this many images in one turn. */
 export const MEDIA_INBOUND_MAX_IMAGES_PER_TURN = 4;
 
+/** At most this many audio parts in one turn (counted inside the turn's parts). */
+export const MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN = 1;
+
 /** One inline part's base64 text is at most this many characters. */
 export const MEDIA_INBOUND_PART_MAX_BASE64_CHARS = 5_000_000;
 
 /** One turn's inline parts together are at most this many base64 characters. */
 export const MEDIA_INBOUND_TURN_MAX_BASE64_CHARS = 6_000_000;
 
-/** At most this many audio parts in one turn. */
-export const AUDIO_PARTS_MAX_COUNT = 1;
 
 /** A part's link is at most this many characters. */
 export const PART_URL_MAX_CHARS = 4096;
@@ -141,8 +142,8 @@ export function validateUserParts(list: readonly UserPartCandidate[], context: U
     if (type === "image" && counts.image > MEDIA_INBOUND_MAX_IMAGES_PER_TURN) {
       return { ok: false, refusal: { reason: "too_many", kind: "image", max: MEDIA_INBOUND_MAX_IMAGES_PER_TURN } };
     }
-    if (type === "audio" && counts.audio > AUDIO_PARTS_MAX_COUNT) {
-      return { ok: false, refusal: { reason: "too_many", kind: "audio", max: AUDIO_PARTS_MAX_COUNT } };
+    if (type === "audio" && counts.audio > MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN) {
+      return { ok: false, refusal: { reason: "too_many", kind: "audio", max: MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN } };
     }
     const mediaType = source.mediaType ?? "";
     const named = mediaType !== "" ? { mediaType } : {};

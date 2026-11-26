@@ -75,7 +75,7 @@ import {
   createUiResourceReader,
   createWebAdapters,
   deleteThread,
-  AUDIO_PARTS_MAX_COUNT,
+  MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN,
   MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
   MEDIA_INBOUND_MAX_PARTS_PER_TURN,
   MEDIA_INBOUND_TURN_MAX_BASE64_CHARS,
@@ -654,7 +654,7 @@ function partOf(p: PendingPart): UserPartCandidate {
 /** At most this many parts of a kind wait in the composer (the judge's per-kind caps); `undefined` = only the turn's. */
 const PENDING_KIND_CAP: { readonly [kind in UserPartKind]?: number } = {
   image: MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
-  audio: AUDIO_PARTS_MAX_COUNT,
+  audio: MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN,
 };
 
 /** The send options for a composer turn's parts; `undefined` for none (the body is then exactly as before). */

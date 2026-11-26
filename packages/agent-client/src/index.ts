@@ -95,7 +95,7 @@ export {
 // for a host that checks a pick before sending. The suggested media types are
 // a picker's hint, never a gate.
 export {
-  AUDIO_PARTS_MAX_COUNT,
+  MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN,
   describeUserPartRefusal,
   isUserPartKind,
   MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
