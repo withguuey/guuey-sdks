@@ -49,9 +49,9 @@ export const USER_PART_SUGGESTED_MIME_TYPES: { readonly [kind in UserPartKind]: 
 });
 
 /*
- * The inbound media caps: a courtesy mirror of @guuey-private/media-signing; a sync test pins equality. That package
- * is the one home of these numbers and the runtime enforces them; this public package cannot import it, so it keeps
- * the same names and values and refuses a turn the runtime would refuse whole.
+ * The inbound media caps for one turn, which follow the server's limits. This public package cannot import the
+ * server's copy, so it keeps the same names and values and refuses a turn past them before sending it. No test pins
+ * the two copies together yet, so keep them equal by hand.
  */
 
 /** At most this many parts in one turn, of every kind together. */
