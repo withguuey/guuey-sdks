@@ -30,6 +30,7 @@ import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
 import type { TurnAttachment } from "./attachments.js";
 import type { InputKind } from "./input-kinds.js";
+import type { TurnContextBlock } from "./invoke-body-v2.js";
 
 export interface InvokeBodyInput {
   /**
@@ -54,8 +55,8 @@ export interface InvokeBodyInput {
    */
   tapLabels?: TapLabels;
   /**
-   * The turn's images (guuey#2293), already judged by
-   * `validateImageAttachments`. An empty list is the same as none: no key.
+   * The turn's images (guuey#2293): the judged parts in shape 1's form
+   * (`shape1AttachmentsOf`). An empty list is the same as none: no key.
    */
   attachments?: readonly TurnAttachment[];
   /**
@@ -64,6 +65,12 @@ export interface InvokeBodyInput {
    * the text is the turn).
    */
   inputKind?: InputKind;
+  /**
+   * This message's context (`SendOptions.turnContext`): the app's own text
+   * blocks beside the words. An empty list is the same as none: no key. A
+   * runtime that predates it ignores the key.
+   */
+  turnContext?: readonly TurnContextBlock[];
 }
 
 /** The wire body, exactly as sent. */
@@ -77,6 +84,7 @@ export interface InvokeBody {
   tapLabels?: TapLabels;
   attachments?: readonly TurnAttachment[];
   inputKind?: InputKind;
+  turnContext?: readonly TurnContextBlock[];
 }
 
 export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
@@ -103,5 +111,8 @@ export function buildInvokeBody(i: InvokeBodyInput): InvokeBody {
     // kinds refuses an empty input before the stream; the hook reads that
     // refusal (see `isInputKindRefusal`).
     ...(i.inputKind !== undefined && i.input === "" ? { inputKind: i.inputKind } : {}),
+    // The message's context, last: carriage only, the runtime judges it. Shape 2
+    // carries the same blocks as `run.context`.
+    ...(i.turnContext !== undefined && i.turnContext.length > 0 ? { turnContext: i.turnContext } : {}),
   };
 }

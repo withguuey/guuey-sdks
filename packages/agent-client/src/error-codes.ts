@@ -54,6 +54,12 @@ export const AGENT_ERROR_CODES = {
   /** The app hit its builder-set managed spend cap. */
   MANAGED_SPEND_CAP: "MANAGED_SPEND_CAP",
   /**
+   * The invoke's images broke the runtime's rules (guuey#2293): a type off the allowlist, too many, one too large, or a
+   * link it would not fetch (a guest's link, one it could not read). A 400 before the stream; nothing was run or stored.
+   * Not retried: the same images meet the same refusal.
+   */
+  ATTACHMENTS_INVALID: "ATTACHMENTS_INVALID",
+  /**
    * The pod is at its concurrent-turn cap (scaling S1-F3). A 503 carrying a
    * `Retry-After` hint, and one of the two capacity codes
    * {@link fetchStreamTransport} retries by itself (with a pre-stream
@@ -210,20 +216,19 @@ export const CLIENT_ERROR_CODES = {
    */
   THREAD_HISTORY_UNAVAILABLE: "THREAD_HISTORY_UNAVAILABLE",
   /**
-   * The send carried images the V1 rules refuse (guuey#2293: a type off the
-   * allowlist, too many, too large, not base64). Nothing was sent; `error`
-   * names the rule. The host should have judged the list before sending
-   * (`validateImageAttachments`).
+   * The send carried parts the rules refuse (too many images or recordings, one too large, the turn's inline parts too
+   * large together, not base64, no media type, a link that is not `https`, an uploaded file without an id or before
+   * the conversation started), or parts request shape 1 cannot carry on a turn that must go as shape 1 (the agent's
+   * runtime parses no newer shape). Nothing was sent; `error` names the part and the rule. The host can judge a list
+   * before sending (`validateUserParts`).
    */
-  ATTACHMENTS_INVALID: "ATTACHMENTS_INVALID",
+  PARTS_INVALID: "PARTS_INVALID",
   /**
-   * The turn carried images and the agent's runtime did not acknowledge them
-   * on its `session` frame (guuey#2293). A runtime that predates attachments
-   * parses them and ignores them, so the turn is ended at once, before any
-   * reply, rather than answered without the images. Sending again without the
-   * images works.
+   * The turn carried parts and the agent's runtime did not acknowledge every one of them on its `session` frame: the
+   * agent does not take that kind, or its runtime predates it (and would parse it and ignore it). The turn is ended at
+   * once, before any reply, rather than answered without the part. Sending again without the parts works.
    */
-  ATTACHMENTS_UNSUPPORTED: "ATTACHMENTS_UNSUPPORTED",
+  PARTS_UNSUPPORTED: "PARTS_UNSUPPORTED",
   /**
    * A turn without text (guuey#2549, `SendOptions.inputKind`) was refused by
    * the agent's runtime before it started: the agent does not take such a turn

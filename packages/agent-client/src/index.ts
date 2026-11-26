@@ -84,12 +84,52 @@ export {
   INPUT_KINDS,
   isInputKind,
   isInputKindRefusal,
+  readAccepts,
   readAcceptedInputKinds,
   userInputKindOf,
+  type Accepts,
   type InputKind,
 } from "./input-kinds.js";
-// guuey#2293: the image attachments a turn may carry — the V1 allowlist, the
-// caps and the judge `send` runs, for a host that checks a pick before sending.
+// A turn's parts (`SendOptions.parts`): the four kinds, the caps (a mirror of
+// the runtime's), the one judge `send` runs, and shape 1's images-only form,
+// for a host that checks a pick before sending. The suggested media types are
+// a picker's hint, never a gate.
+export {
+  AUDIO_PARTS_MAX_COUNT,
+  describeUserPartRefusal,
+  isUserPartKind,
+  MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
+  MEDIA_INBOUND_MAX_PARTS_PER_TURN,
+  MEDIA_INBOUND_MAX_STORAGE_REFS_PER_TURN,
+  MEDIA_INBOUND_PART_MAX_BASE64_CHARS,
+  MEDIA_INBOUND_TURN_MAX_BASE64_CHARS,
+  PART_FILE_ID_MAX_CHARS,
+  PART_URL_MAX_CHARS,
+  shape1AttachmentsOf,
+  shape1FormOf,
+  USER_PART_KINDS,
+  USER_PART_SUGGESTED_MIME_TYPES,
+  validateUserParts,
+  type Shape1Form,
+  type UserPart,
+  type UserPartCandidate,
+  type UserPartKind,
+  type UserPartRefusal,
+  type UserPartsContext,
+  type UserPartsVerdict,
+} from "./user-parts.js";
+// The invoke body, request shape 2 (the silverprotocol `AgInput` start arm),
+// and the reader of an older runtime's refusal of it (W1).
+export {
+  buildInvokeBodyV2,
+  isRequestShapeRefusal,
+  type InvokeBodyV2,
+  type InvokeBodyV2Input,
+  type TurnContextBlock,
+} from "./invoke-body-v2.js";
+// guuey#2293: the image attachments of request shape 1 — the V1 allowlist, its
+// caps and its judge, for a host that checks an image pick before sending
+// (`send` itself judges `SendOptions.parts` with `validateUserParts`).
 export {
   IMAGE_ATTACHMENT_MIME_TYPES,
   IMAGE_ATTACHMENTS_MAX_COUNT,

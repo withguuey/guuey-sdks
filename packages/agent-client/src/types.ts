@@ -14,7 +14,8 @@
  */
 
 import type { AgClientCapabilities, AgMessage, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import type { ImageAttachmentCandidate } from "./attachments.js";
+import type { TurnContextBlock } from "./invoke-body-v2.js";
+import type { UserPartCandidate, UserPartKind } from "./user-parts.js";
 import type { InputKind } from "./input-kinds.js";
 
 /** A flat chat turn as rendered by the consumer UI. */
@@ -120,21 +121,28 @@ export interface SendOptions {
    */
   tapLabels?: readonly (string | null)[];
   /**
-   * The turn's images (guuey#2293): inline base64, or an `https` link the app
-   * already has (`{ kind: "url", url, mimeType? }`, which the runtime fetches
-   * once, for a signed-in person only; never logged or stored here), judged at send by
-   * `validateImageAttachments` (the allowlist, the count and the size caps in
-   * `./attachments`). A refused list is not sent at all: the send ends with
-   * `ATTACHMENTS_INVALID`. A runtime that does not acknowledge the images on
-   * its `session` frame ends the turn with `ATTACHMENTS_UNSUPPORTED` before
-   * any reply, since an older runtime would otherwise answer without them.
+   * The turn's parts: images, a recording, text files and documents, each the protocol's own block of that kind
+   * (`{ type, source }`). The source is inline `base64` (with its `mediaType`), an `https` link the app already has
+   * (which the runtime fetches once, and which this package never logs or stores), or an object the app uploaded to
+   * this conversation (`{ type: "file", fileId }`, only once the conversation has a thread). Judged at send by
+   * `validateUserParts` on size and shape only (`./user-parts` holds the caps): which kinds and media types an agent
+   * takes is its runtime's word, never this package's. A refused list is not sent at all: the send ends with
+   * `PARTS_INVALID`. A turn that goes as request shape 1 (a runtime that advertised no newer shape) carries attached
+   * images only, and any other part ends the send with `PARTS_INVALID` too. A runtime that does not acknowledge every
+   * part on its `session` frame ends the turn with `PARTS_UNSUPPORTED` before any reply, since an older runtime would
+   * otherwise answer without them.
    *
-   * Typed as the judge reads it ({@link ImageAttachmentCandidate}), not as
-   * the accepted `ImageAttachment`: the judge reads strings and decides,
-   * so a caller holding an attachment it did not type (a JavaScript caller, a
-   * file read off disk) passes it as it is and gets the judge's refusal.
+   * Typed as the judge reads it ({@link UserPartCandidate}), not as the accepted `UserPart`: the judge reads strings
+   * and decides, so a caller holding a part it did not type (a JavaScript caller, a file read off disk) passes it as it
+   * is and gets the judge's refusal.
    */
-  attachments?: readonly ImageAttachmentCandidate[];
+  parts?: readonly UserPartCandidate[];
+  /**
+   * This message's context: text blocks the app adds to the turn beside the person's words (what the app knows that
+   * the person did not type). Trusted as the app's, unlike `pageContext`. It rides `run.context` in request shape 2
+   * and the `turnContext` key in shape 1; an empty list is the same as none.
+   */
+  turnContext?: readonly TurnContextBlock[];
   /**
    * A turn without words (guuey#2549): pass `input` as `""` (blank text reads
    * as `""`) and name where the content rides. `"context-only"`: it rode on
@@ -267,7 +275,7 @@ export type GenerateId = () => string;
 export interface InvokeRequest {
   /** Fully-resolved POST target (already normalised to end in `/agent/invoke`). */
   url: string;
-  /** JSON request body, built by `buildInvokeBody` (see `InvokeBody` for its keys). */
+  /** JSON request body, built by `buildInvokeBody` (shape 1, `InvokeBody`) or `buildInvokeBodyV2` (shape 2, `InvokeBodyV2`). */
   body: unknown;
   /** Aborts the in-flight stream. */
   signal: AbortSignal;
@@ -702,4 +710,13 @@ export interface UseAgentInvokeReturn {
    * agent.
    */
   acceptedInputKinds: readonly InputKind[] | null;
+  /**
+   * The user part kinds the agent listed on the latest turn's `session` frame
+   * (`accepts.partKinds`), or `null` before any turn of this app was
+   * admitted. A HINT for a host's UI only (which pickers to offer): it never
+   * gates a send ({@link SendOptions.parts} is judged on size and shape, and
+   * the runtime's per-turn acknowledgement is the one word on a kind). Cleared
+   * by an app switch; kept by `reset()`.
+   */
+  acceptedPartKinds: readonly UserPartKind[] | null;
 }

@@ -28,6 +28,7 @@ import { ingestMessageFrame } from "./blocks.js";
 import type { AgentInvokeStatus, InvokeRequest, InvokeTransport, ProfileLinkRequest, ThreadClosed } from "./types.js";
 import { readThreadClosed } from "./thread-closed.js";
 import { type InputKind, readAccepts } from "./input-kinds.js";
+import type { UserPartKind } from "./user-parts.js";
 
 /**
  * One semantic step of a turn. Field conventions:
@@ -60,6 +61,23 @@ export type InvokeTurnEvent =
        * the runtime still judges each turn.
        */
       acceptedInputKinds: readonly InputKind[];
+      /**
+       * The highest request shape the runtime parses, from `accepts.requestShape`
+       * (`2` = the `AgInput` body). Absent on every runtime before it, which
+       * parses shape 1 only. One pod's hint for the NEXT turn, never a promise.
+       */
+      requestShape?: number;
+      /**
+       * The user part kinds the agent lists for its NEXT turn, from
+       * `accepts.partKinds`: `[]` when the frame lists none. A hint for a
+       * host's UI; the per-turn `partsAccepted` is the runtime's word.
+       */
+      partKinds: readonly UserPartKind[];
+      /**
+       * How many of THIS turn's parts of each kind the runtime accepted, from
+       * `accepts.parts`. Absent when the runtime sent no counts.
+       */
+      partsAccepted?: { readonly [kind in UserPartKind]?: number };
     }
   | {
       kind: "message";
@@ -144,6 +162,9 @@ export async function* invokeTurn(
           threadId: stringField(ev.data, "threadId") ?? null,
           ...(accepts.attachments !== undefined ? { attachmentsAccepted: accepts.attachments } : {}),
           acceptedInputKinds: accepts.inputKinds,
+          ...(accepts.requestShape !== undefined ? { requestShape: accepts.requestShape } : {}),
+          partKinds: accepts.partKinds,
+          ...(accepts.parts !== undefined ? { partsAccepted: accepts.parts } : {}),
         };
       } else if (ev.event === "message") {
         // Status derivation (guuey#91) — read the frame's `type` before the

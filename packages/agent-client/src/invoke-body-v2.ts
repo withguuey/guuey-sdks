@@ -17,6 +17,8 @@ import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
 import type { PageContext } from "./types.js";
 import type { InputKind } from "./input-kinds.js";
 import type { UserPart } from "./user-parts.js";
+import { AgentResponseError } from "./errors.js";
+import { AGENT_ERROR_CODES } from "./error-codes.js";
 
 /** A turn-context block: text only in v1 (the runtime refuses any other kind). */
 export type TurnContextBlock = Extract<AgBlock, { type: "text" }>;
@@ -28,7 +30,7 @@ export interface InvokeBodyV2Input {
   threadId?: string | null;
   /** Idempotency key for this turn's user message: the message id AND the turn id. */
   clientMessageId: string;
-  /** The turn's judged parts ({@link validateUserParts}). */
+  /** The turn's judged parts (`validateUserParts`). */
   parts?: readonly UserPart[];
   /** This message's context (design v5.3 turn context). */
   turnContext?: readonly TurnContextBlock[];
@@ -75,4 +77,19 @@ export function buildInvokeBodyV2(i: InvokeBodyV2Input): InvokeBodyV2 {
     messages: [{ id: i.clientMessageId, role: "user", content }],
     ...(i.turnContext !== undefined && i.turnContext.length > 0 ? { run: { context: [...i.turnContext] } } : {}),
   };
+}
+
+/**
+ * Whether a pre-stream refusal is an older runtime failing to parse a shape-2 body (W1). A runtime before shape 2 reads
+ * the body as shape 1, finds no `input` string, and refuses with a 400 `INVALID_REQUEST` whose message names the
+ * `input` field ("input: non-empty string required"). Other refusals share the code, so the message's field is the
+ * discriminator; any other 400 is an ordinary failure, never a reason to send again.
+ */
+export function isRequestShapeRefusal(err: unknown): err is AgentResponseError {
+  return (
+    err instanceof AgentResponseError &&
+    err.status === 400 &&
+    err.code === AGENT_ERROR_CODES.INVALID_REQUEST &&
+    err.message.startsWith("input:")
+  );
 }

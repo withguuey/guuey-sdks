@@ -48,7 +48,7 @@ export interface Accepts {
    * runtime before it, so the client writes shape 1. One pod's hint, never a promise (W1 keeps a fallback).
    */
   requestShape?: number;
-  /** The user part kinds the agent takes on its NEXT turn (the per-kind gate's advertisement); `[]` when none listed. */
+  /** The user part kinds the agent lists for its NEXT turn: a UI hint only, never a gate; `[]` when none listed. */
   partKinds: readonly UserPartKind[];
   /** How many of THIS turn's parts of each kind it accepted (the generalized per-kind ack), whole counts only. */
   parts?: { readonly [kind in UserPartKind]?: number };
