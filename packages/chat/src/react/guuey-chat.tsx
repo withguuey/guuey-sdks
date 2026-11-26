@@ -1635,6 +1635,18 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       };
       const countOf = (list: readonly { kind: UserPartKind }[], kind: UserPartKind): number =>
         list.filter((p) => p.kind === kind).length;
+      /** Whether one more of `kind` fits beside `waiting`; when it does not, the file is named with the cap it hit. */
+      const fits = (name: string, kind: UserPartKind, waiting: readonly { kind: UserPartKind }[]): boolean => {
+        if (waiting.length >= MEDIA_INBOUND_MAX_PARTS_PER_TURN) {
+          refusals.push(policy.strings.attachmentRefusedTooManyParts(name));
+          return false;
+        }
+        const kindCap = PENDING_KIND_CAP[kind];
+        if (kindCap === undefined || countOf(waiting, kind) < kindCap) return true;
+        if (kind === "audio") refusals.push(policy.strings.recordingRefusedTooMany(name));
+        else refuse(name, "too_many");
+        return false;
+      };
       // The counts first, in pick order, so the files past a cap are refused
       // without being read.
       const taken: { file: File; kind: UserPartKind }[] = [];
@@ -1644,12 +1656,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           refuse(file.name, "unsupported_type");
           continue;
         }
-        const waiting = [...pendingPartsRef.current, ...taken];
-        const kindCap = PENDING_KIND_CAP[kind];
-        if (waiting.length >= MEDIA_INBOUND_MAX_PARTS_PER_TURN || (kindCap !== undefined && countOf(waiting, kind) >= kindCap)) {
-          refuse(file.name, "too_many");
-          continue;
-        }
+        if (!fits(file.name, kind, [...pendingPartsRef.current, ...taken])) continue;
         taken.push({ file, kind });
       }
       const results = await Promise.all(
@@ -1669,11 +1676,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           refuse(read.name, read.reason);
           continue;
         }
-        const kindCap = PENDING_KIND_CAP[kind];
-        if (next.length >= MEDIA_INBOUND_MAX_PARTS_PER_TURN || (kindCap !== undefined && countOf(next, kind) >= kindCap)) {
-          refuse(read.name, "too_many");
-          continue;
-        }
+        if (!fits(read.name, kind, next)) continue;
         const total = next.reduce((sum, p) => sum + p.data.length, 0);
         if (total + read.data.length > MEDIA_INBOUND_TURN_MAX_BASE64_CHARS) {
           refuse(read.name, "too_large");

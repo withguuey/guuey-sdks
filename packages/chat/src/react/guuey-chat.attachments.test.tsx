@@ -196,6 +196,18 @@ describe("<GuueyChat parts>", () => {
     expect(screen.getAllByRole("img")).toHaveLength(4);
   });
 
+  it("each count cap names its own kind: up to 4 images, only one recording, up to 16 attachments", async () => {
+    expect(defaultChatStrings.attachmentRefused("5.png", "too_many")).toMatch(/up to 4 images/);
+    expect(defaultChatStrings.recordingRefusedTooMany("b.wav")).toMatch(/only one recording/);
+    expect(defaultChatStrings.attachmentRefusedTooManyParts("17.pdf")).toMatch(/up to 16 attachments/);
+    const { adapters } = podAdapters();
+    const { container } = renderChat(adapters, { parts: { document: true } });
+    const docs = Array.from({ length: 17 }, (_, i) => new File(["%PDF-1.4"], `${i + 1}.pdf`, { type: "application/pdf" }));
+    pick(container, ...docs);
+    await screen.findByText(defaultChatStrings.attachmentRefusedTooManyParts("17.pdf"));
+    expect(screen.getByText("16.pdf")).toBeTruthy();
+  });
+
   it("a runtime that does not acknowledge the parts reads as its own error, not a generic failure", async () => {
     const { adapters, calls } = podAdapters({ acknowledge: false });
     const { container } = renderChat(adapters);
@@ -248,7 +260,9 @@ describe("<GuueyChat parts>", () => {
       new File([new Uint8Array([1, 2, 3])], "a.wav", { type: "audio/wav" }),
       new File([new Uint8Array([1, 2, 3])], "b.wav", { type: "audio/wav" }),
     );
-    await screen.findByText(defaultChatStrings.attachmentRefused("b.wav", "too_many"));
+    // The recording cap names a recording, never the image cap.
+    await screen.findByText(defaultChatStrings.recordingRefusedTooMany("b.wav"));
+    expect(screen.queryByText(defaultChatStrings.attachmentRefused("b.wav", "too_many"))).toBeNull();
     expect(screen.getByText("a.wav")).toBeTruthy();
   });
 });

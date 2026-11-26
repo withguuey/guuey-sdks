@@ -439,13 +439,18 @@ export interface ChatStrings {
    * row's label, each preview's Remove button, the status line naming a file
    * the composer did not take, and the turn's words when parts are sent with
    * none (every runtime needs words; this line is what the model reads beside
-   * them: images only, or anything else).
+   * them: images only, or anything else). A file refused for a count names
+   * the cap it hit: `attachmentRefused`'s `too_many` is the image cap,
+   * `recordingRefusedTooMany` the one-recording cap, and
+   * `attachmentRefusedTooManyParts` the turn's cap on parts of every kind.
    */
   attachImage: string;
   attachFile: string;
   attachmentsLabel: string;
   removeAttachment: (name: string) => string;
   attachmentRefused: (name: string, reason: "unsupported_type" | "too_large" | "too_many" | "unreadable") => string;
+  recordingRefusedTooMany: (name: string) => string;
+  attachmentRefusedTooManyParts: (name: string) => string;
   attachmentsOnlyInput: string;
   filesOnlyInput: string;
   /**
@@ -692,6 +697,8 @@ export const defaultChatStrings: ChatStrings = {
         return `${name} wasn't added: it couldn't be read.`;
     }
   },
+  recordingRefusedTooMany: (name) => `${name} wasn't added: a message can carry only one recording.`,
+  attachmentRefusedTooManyParts: (name) => `${name} wasn't added: a message can carry up to 16 attachments.`,
   attachmentsOnlyInput: "See the attached image.",
   filesOnlyInput: "See the attached files.",
   voiceInput: "Voice input",
