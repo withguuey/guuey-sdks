@@ -1,0 +1,9 @@
+{
+  "about": "W1: how an agent runtime that predates request shape 2 answers a shape-2 invoke body. It reads the body as shape 1, finds no `input` string, and refuses before the stream, storing nothing. The client sends that turn once more as shape 1 on exactly this answer (the code INVALID_REQUEST with a message naming the `input` field). `body` is the response body byte for byte.",
+  "source": "written from the runtime's invoke-body refusal: a 400 JSON { code, message } envelope whose message is the parse error's own sentence.",
+  "status": 400,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"code\":\"INVALID_REQUEST\",\"message\":\"input: non-empty string required\"}"
+}

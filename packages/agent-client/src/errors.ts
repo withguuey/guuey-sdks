@@ -137,9 +137,11 @@ export function hasWakingMarker(resp: Response): boolean {
 
 /**
  * Turn a refused `Response` into an {@link AgentResponseError}: the status,
- * the pod's `{ code, message }` when the body is that JSON envelope (else the
- * bare `agent responded <status>`), the `Retry-After` hint, and `waking` —
- * true only for a 503 whose {@link WAKING_HEADER} is `1`.
+ * the pod's `{ code, message }` when the body is that JSON envelope, else a
+ * plain `{ error }` body's sentence as the message (the released `guuey dev`
+ * server answers in that shape, with no code), else the bare
+ * `agent responded <status>`; the `Retry-After` hint, and `waking` — true
+ * only for a 503 whose {@link WAKING_HEADER} is `1`.
  *
  * The one place an invoke refusal becomes this error, so every transport
  * (the web stream, a host's own `fetch`) reads the same fields the same way
@@ -155,6 +157,10 @@ export async function agentResponseErrorFrom(resp: Response): Promise<AgentRespo
   if (body !== null && typeof body === "object") {
     if ("message" in body && typeof body.message === "string" && body.message) {
       message = body.message;
+    } else if ("error" in body && typeof body.error === "string" && body.error) {
+      // `message` wins when a body carries both; `error` is only the sentence
+      // of a body that has no envelope message.
+      message = body.error;
     }
     if ("code" in body && typeof body.code === "string") {
       code = body.code;

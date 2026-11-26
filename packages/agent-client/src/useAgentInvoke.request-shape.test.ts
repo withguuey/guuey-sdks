@@ -6,11 +6,12 @@
  * writes shape 1 for every new turn from then on, in memory only. W2: a turn's shape is fixed at its first send, so a
  * Retry goes in its own shape; only the W1 fallback moves a turn, to shape 1.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { AGENT_ERROR_CODES, CLIENT_ERROR_CODES } from "./error-codes.js";
-import { AgentResponseError } from "./errors.js";
+import { AgentResponseError, agentResponseErrorFrom } from "./errors.js";
 import type { UserPartCandidate } from "./user-parts.js";
 import type { AgentInvokeAdapters, InvokeRequest } from "./types.js";
 
@@ -25,7 +26,7 @@ const SATURATED = new AgentResponseError("agent is at capacity", 503, AGENT_ERRO
 const AUDIO: UserPartCandidate = { type: "audio", source: { type: "base64", mediaType: "audio/wav", data: "UklGRg==" } };
 const PNG: UserPartCandidate = { type: "image", source: { type: "base64", mediaType: "image/png", data: "iVBORw0KGgo=" } };
 
-type Step = { session: Record<string, unknown> } | { refuse: AgentResponseError };
+type Step = { session: { [key: string]: unknown } } | { refuse: AgentResponseError };
 const ANSWER: Step = { session: { threadId: "t-1" } };
 
 /** A pod that answers each invoke by the next scripted step. */
@@ -172,6 +173,64 @@ describe("useAgentInvoke — W1, the one fallback", () => {
       await result.current.send("other agent");
     });
     expect(bodies.map(shapeOf)).toEqual([2, 1, 2]);
+    unmount();
+  });
+});
+
+/**
+ * A refusal face pinned in `fixtures/` (its status, headers and body bytes), read the way every transport reads a
+ * refusal: through `agentResponseErrorFrom`.
+ */
+async function refusalFace(file: "shape2-refusal.runtime.json" | "shape2-refusal.dev-server.json"): Promise<AgentResponseError> {
+  const raw: unknown = JSON.parse(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), "utf8"));
+  if (typeof raw !== "object" || raw === null) throw new Error(`${file}: not an object`);
+  const status: unknown = Reflect.get(raw, "status");
+  const headers: unknown = Reflect.get(raw, "headers");
+  const body: unknown = Reflect.get(raw, "body");
+  if (typeof status !== "number" || typeof body !== "string" || typeof headers !== "object" || headers === null) {
+    throw new Error(`${file}: not a refusal face`);
+  }
+  const h = new Headers();
+  for (const [name, value] of Object.entries(headers)) if (typeof value === "string") h.set(name, value);
+  return agentResponseErrorFrom(new Response(body, { status, headers: h }));
+}
+
+describe("useAgentInvoke — W1 on each released server's face", () => {
+  for (const file of ["shape2-refusal.runtime.json", "shape2-refusal.dev-server.json"] as const) {
+    it(`${file}: exactly ONE fallback to shape 1 under the same id, and the next turn is shape 1`, async () => {
+      const face = await refusalFace(file);
+      const { adapters, bodies } = podAdapters([{ refuse: face }, ANSWER, ANSWER]);
+      const { result, unmount } = hook(adapters);
+      await act(async () => {
+        await result.current.send("hello");
+      });
+      expect(bodies.map(shapeOf)).toEqual([2, 1]);
+      expect(bodies.map(turnIdOf)).toEqual(["cmid-1", "cmid-1"]);
+      expect(result.current.errorCode).toBeNull();
+      await act(async () => {
+        await result.current.send("again");
+      });
+      expect(bodies.map(shapeOf)).toEqual([2, 1, 1]);
+      unmount();
+    });
+  }
+
+  it("the dev server's sentence beside a code is not its face: no fallback, the code stands", async () => {
+    const coded = await agentResponseErrorFrom(
+      new Response('{"error":"body.input must be a string","code":"X"}', {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const { adapters, bodies } = podAdapters([{ refuse: coded }, ANSWER]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(bodies).toHaveLength(1);
+    expect(result.current.errorCode).toBe("X");
+    expect(result.current.error).toBe("body.input must be a string");
+    expect(result.current.sendStates).toEqual({ "cmid-1": "failed" });
     unmount();
   });
 });

@@ -79,17 +79,20 @@ export function buildInvokeBodyV2(i: InvokeBodyV2Input): InvokeBodyV2 {
   };
 }
 
+/** The released `guuey dev` server's refusal of a body without an `input` string, word for word. */
+const DEV_SERVER_SHAPE_REFUSAL = "body.input must be a string";
+
 /**
- * Whether a pre-stream refusal is an older runtime failing to parse a shape-2 body (W1). A runtime before shape 2 reads
- * the body as shape 1, finds no `input` string, and refuses with a 400 `INVALID_REQUEST` whose message names the
- * `input` field ("input: non-empty string required"). Other refusals share the code, so the message's field is the
- * discriminator; any other 400 is an ordinary failure, never a reason to send again.
+ * Whether a pre-stream refusal is an older server failing to parse a shape-2 body (W1). Two faces, each read exactly:
+ *  - the agent runtime before shape 2 reads the body as shape 1, finds no `input` string, and answers a 400
+ *    `{ code: "INVALID_REQUEST", message }` whose message names the `input` field ("input: non-empty string
+ *    required"). Other refusals share the code, so the message's field is the discriminator;
+ *  - every released `guuey dev` server answers a 400 `{ "error": "body.input must be a string" }`, with no code at all
+ *    (`agentResponseErrorFrom` reads `error` as the message). Only that exact sentence and no code counts.
+ * Any other 400 is an ordinary failure, never a reason to send again.
  */
 export function isRequestShapeRefusal(err: unknown): err is AgentResponseError {
-  return (
-    err instanceof AgentResponseError &&
-    err.status === 400 &&
-    err.code === AGENT_ERROR_CODES.INVALID_REQUEST &&
-    err.message.startsWith("input:")
-  );
+  if (!(err instanceof AgentResponseError) || err.status !== 400) return false;
+  if (err.code === AGENT_ERROR_CODES.INVALID_REQUEST) return err.message.startsWith("input:");
+  return err.code === undefined && err.message === DEV_SERVER_SHAPE_REFUSAL;
 }

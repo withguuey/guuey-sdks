@@ -1,0 +1,12 @@
+{
+  "about": "W1: how every released `guuey dev` server answers a request-shape-2 invoke body. It reads the body as shape 1, finds no `input` string, and refuses before any turn. The client sends that turn once more as shape 1 on exactly this answer. `body` is the response body byte for byte.",
+  "source": "written from the released dev server's own code (oss/packages/cli/src/dev/dev-server.ts: the invoke route's body read throws, and the route answers 400 with { error } and its CORS headers), unchanged since the --serve router shipped.",
+  "status": 400,
+  "headers": {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-guuey-guest"
+  },
+  "body": "{\"error\":\"body.input must be a string\"}"
+}

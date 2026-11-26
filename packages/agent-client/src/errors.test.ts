@@ -85,6 +85,30 @@ describe("agentResponseErrorFrom — the one Response → error builder", () => 
     expect(err.waking).toBe(false);
   });
 
+  it("reads a plain { error } body's sentence as the message, with no code (the guuey dev server's shape)", async () => {
+    const err = await agentResponseErrorFrom(
+      new Response(JSON.stringify({ error: "body.input must be a string" }), { status: 400, headers: { "Content-Type": "application/json" } }),
+    );
+    expect(err.message).toBe("body.input must be a string");
+    expect(err.status).toBe(400);
+    expect(err.code).toBeUndefined();
+  });
+
+  it("the envelope's message wins over an error sentence, whichever comes first in the body", async () => {
+    for (const body of ['{"error":"the error","message":"the message"}', '{"message":"the message","error":"the error"}']) {
+      const err = await agentResponseErrorFrom(new Response(body, { status: 400 }));
+      expect(err.message).toBe("the message");
+    }
+    // An empty or non-string message is no message: the error sentence stands in.
+    for (const body of ['{"message":"","error":"the error"}', '{"message":7,"error":"the error"}']) {
+      expect((await agentResponseErrorFrom(new Response(body, { status: 400 }))).message).toBe("the error");
+    }
+    // An empty or non-string error is no sentence either.
+    for (const body of ['{"error":""}', '{"error":{"text":"x"}}']) {
+      expect((await agentResponseErrorFrom(new Response(body, { status: 400 }))).message).toBe("agent responded 400");
+    }
+  });
+
   it("falls back to the bare status for a body that is not JSON", async () => {
     const err = await agentResponseErrorFrom(new Response("Service Unavailable", { status: 503 }));
     expect(err.message).toBe("agent responded 503");
