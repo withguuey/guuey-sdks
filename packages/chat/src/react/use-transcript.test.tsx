@@ -400,6 +400,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     adopted: false,
     sendStates: {},
     acceptedInputKinds: null,
+    acceptedPartKinds: null,
     ...over,
   };
 }
