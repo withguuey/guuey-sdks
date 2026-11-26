@@ -27,7 +27,11 @@ const SATURATED = new AgentResponseError("agent is at capacity", 503, AGENT_ERRO
 const AUDIO: UserPartCandidate = { type: "audio", source: { type: "base64", mediaType: "audio/wav", data: "UklGRg==" } };
 const PNG: UserPartCandidate = { type: "image", source: { type: "base64", mediaType: "image/png", data: "iVBORw0KGgo=" } };
 
-type Step = { session: { [key: string]: unknown } } | { refuse: AgentResponseError };
+type Step =
+  | { session: { [key: string]: unknown } }
+  | { refuse: AgentResponseError }
+  /** The turn is admitted (its session frame arrives), THEN the stream fails with this error. */
+  | { admitThenRefuse: AgentResponseError };
 const ANSWER: Step = { session: { threadId: "t-1" } };
 
 /** A pod that answers each invoke by the next scripted step. */
@@ -43,6 +47,10 @@ function podAdapters(steps: Step[]) {
       const step = steps[call++];
       if (step === undefined) throw new Error("no scripted step");
       if ("refuse" in step) throw step.refuse;
+      if ("admitThenRefuse" in step) {
+        yield sse("session", { threadId: "t-1" });
+        throw step.admitThenRefuse;
+      }
       yield sse("session", step.session);
       yield sse("message", { type: "text.delta", delta: "Hi." });
       yield sse("done", { stopReason: "end_turn" });
@@ -198,6 +206,25 @@ async function refusalFace(
   for (const [name, value] of Object.entries(headers)) if (typeof value === "string") h.set(name, value);
   return agentResponseErrorFrom(new Response(body, { status, headers: h }));
 }
+
+describe("useAgentInvoke — W1 never re-sends an admitted turn", () => {
+  it("RED: the shape refusal's face arriving AFTER the session frame is the turn's failure, never a second send", async () => {
+    // Once the runtime admitted the turn (its session frame), it may have stored and run it: a re-send could double it.
+    const { adapters, bodies } = podAdapters([{ admitThenRefuse: OLD_RUNTIME }, ANSWER]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(bodies).toHaveLength(1);
+    expect(bodies.map(shapeOf)).toEqual([2]);
+    // The instance did not downgrade either: the next turn still goes as shape 2.
+    await act(async () => {
+      await result.current.send("again");
+    });
+    expect(bodies.map(shapeOf)).toEqual([2, 2]);
+    unmount();
+  });
+});
 
 describe("useAgentInvoke — W1 on each released server's face", () => {
   for (const file of ["shape2-refusal.runtime.json", "shape2-refusal.dev-server.json"] as const) {
