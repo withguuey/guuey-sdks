@@ -43,6 +43,8 @@ export async function modelVisibleToolFilter(_context: object, tool: object): Pr
  * `server` is the key the worker built the server under, the credential file's
  * name. Build one per server, per invoke:
  * `new MCPServerStreamableHttp({ url, name, toolFilter: modelVisibleToolFilterFor(name, invoke.withheldTools) })`.
+ * A worker that also applies the agent's tool gates (the code-mode template does) uses
+ * {@link modelVisibleToolFilterWith} with `toolGatePredicate` instead, which subtracts the same withholds.
  */
 export function modelVisibleToolFilterFor(
   server: string,
