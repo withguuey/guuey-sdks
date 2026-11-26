@@ -1,0 +1,144 @@
+[
+  {
+    "protocol": "agjson",
+    "version": "1.0.0-draft.8",
+    "threadId": "thr_01J8ZK3Q9X",
+    "turnId": "cm_v2_0001",
+    "capabilities": {
+      "hitl": {
+        "ask": true,
+        "grantModes": true
+      },
+      "uiResources": {
+        "viewMessageTurns": true
+      }
+    },
+    "metadata": {
+      "guuey/pageContext": {
+        "path": "/pricing",
+        "title": "Pricing — Acme",
+        "hostOrigin": "https://customer.example"
+      }
+    },
+    "kind": "start",
+    "messages": [
+      {
+        "id": "cm_v2_0001",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What does this page say about pricing?"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "protocol": "agjson",
+    "version": "1.0.0-draft.8",
+    "threadId": "thr_01J8ZK3Q9X",
+    "turnId": "cm_v2_0002",
+    "metadata": {
+      "guuey/inputKind": "context-only"
+    },
+    "kind": "start",
+    "messages": [
+      {
+        "id": "cm_v2_0002",
+        "role": "user",
+        "content": []
+      }
+    ]
+  },
+  {
+    "protocol": "agjson",
+    "version": "1.0.0-draft.8",
+    "threadId": "",
+    "turnId": "cm_v2_0003",
+    "metadata": {
+      "guuey/pageContext": {
+        "hostOrigin": "https://customer.example"
+      },
+      "guuey/mode": "guest"
+    },
+    "kind": "start",
+    "messages": [
+      {
+        "id": "cm_v2_0003",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "protocol": "agjson",
+    "version": "1.0.0-draft.8",
+    "threadId": "thr_01J8ZK3Q9X",
+    "turnId": "cm_v2_0004",
+    "metadata": {
+      "guuey/tapLabels": [
+        "Compare plans"
+      ]
+    },
+    "kind": "start",
+    "messages": [
+      {
+        "id": "cm_v2_0004",
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Compare these against my plan"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "mediaType": "image/png",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+            }
+          },
+          {
+            "type": "audio",
+            "source": {
+              "type": "url",
+              "url": "https://files.example/note.mp3",
+              "mediaType": "audio/mpeg"
+            }
+          },
+          {
+            "type": "file",
+            "source": {
+              "type": "base64",
+              "mediaType": "text/csv",
+              "data": "cGxhbixwcmljZQo="
+            },
+            "filename": "plans.csv"
+          },
+          {
+            "type": "document",
+            "source": {
+              "type": "file",
+              "fileId": "upl_01J8ZK3QA0"
+            },
+            "title": "Terms"
+          }
+        ]
+      }
+    ],
+    "run": {
+      "context": [
+        {
+          "type": "text",
+          "text": "The visitor is on the Pro plan."
+        }
+      ]
+    }
+  }
+]
