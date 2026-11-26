@@ -147,10 +147,23 @@ async function paintedChat(opts: { failSecond?: boolean; strict?: boolean } = {}
   return { handle: handle!, calls };
 }
 
+/**
+ * A turn's body read in the keys this test asks about, from request shape 2: `input` (the one message's words),
+ * `clientMessageId` (the turn id) and `tapLabels` (the guuey metadata's).
+ */
 function bodyOf(req: InvokeRequest | undefined): { [key: string]: unknown } {
   const body = req?.body;
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error("no body");
-  return { ...body };
+  const messages: unknown = Reflect.get(body, "messages");
+  const message: unknown = Array.isArray(messages) ? messages[0] : undefined;
+  const content: unknown = typeof message === "object" && message !== null ? Reflect.get(message, "content") : undefined;
+  const block: unknown = Array.isArray(content) ? content[0] : undefined;
+  const metadata: unknown = Reflect.get(body, "metadata");
+  return {
+    input: typeof block === "object" && block !== null ? Reflect.get(block, "text") : undefined,
+    clientMessageId: Reflect.get(body, "turnId"),
+    tapLabels: typeof metadata === "object" && metadata !== null ? Reflect.get(metadata, "guuey/tapLabels") : undefined,
+  };
 }
 
 describe("the kit's tap echo, end to end (a chip on a card the live fold painted)", () => {

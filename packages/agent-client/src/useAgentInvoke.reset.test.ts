@@ -48,8 +48,12 @@ describe("useAgentInvoke reset()", () => {
       await result.current.send("hello");
     });
     expect(sentBodies).toHaveLength(1);
-    expect(sentBodies[0]).toMatchObject({ input: "hello", clientMessageId: "cmid-test" });
-    expect(sentBodies[0]).not.toHaveProperty("threadId");
+    // Request shape 2: first contact names no thread (`threadId: ""`, which the runtime reads as absent).
+    expect(sentBodies[0]).toMatchObject({
+      threadId: "",
+      turnId: "cmid-test",
+      messages: [{ id: "cmid-test", content: [{ type: "text", text: "hello" }] }],
+    });
 
     unmount();
   });

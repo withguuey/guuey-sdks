@@ -37,7 +37,9 @@ describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
     await act(async () => {
       await result.current.send("what does this cost?");
     });
-    expect(bodies[0]).toMatchObject({ pageContext: page });
+    // Request shape 2: the page block rides the AgInput's guuey metadata, untrusted, never as turn context.
+    expect(bodies[0]).toMatchObject({ metadata: { "guuey/pageContext": page } });
+    expect(bodies[0]).not.toHaveProperty("run");
   });
 
   it("carries a hostOrigin-only context verbatim (guuey#1105) — the widget's INIT origin before any page call", async () => {
@@ -49,7 +51,7 @@ describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
     await act(async () => {
       await result.current.send("hello");
     });
-    expect(bodies[0]).toMatchObject({ pageContext: page });
+    expect(bodies[0]).toMatchObject({ metadata: { "guuey/pageContext": page } });
   });
 
   it("sends the page block on the body verbatim; the optimistic message stays clean", async () => {
@@ -61,7 +63,10 @@ describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
     await act(async () => {
       await result.current.send("what does this cost?");
     });
-    expect(bodies[0]).toMatchObject({ input: "what does this cost?", pageContext: page });
+    expect(bodies[0]).toMatchObject({
+      messages: [{ content: [{ type: "text", text: "what does this cost?" }] }],
+      metadata: { "guuey/pageContext": page },
+    });
     expect(result.current.messages[0]).toMatchObject({ role: "user", text: "what does this cost?" });
     unmount();
   });
@@ -81,13 +86,13 @@ describe("useAgentInvoke — pageContext carriage (guuey#524)", () => {
     await act(async () => {
       await result.current.send("hi");
     });
-    expect(Object.keys(bodies[0] as Record<string, never>)).not.toContain("pageContext");
+    expect(bodies[0]).not.toHaveProperty(["metadata", "guuey/pageContext"]);
     // The host navigates; the NEXT turn carries the new page.
     rerender({ pc: { path: "/docs", title: "Docs" } });
     await act(async () => {
       await result.current.send("and here?");
     });
-    expect(bodies[1]).toMatchObject({ pageContext: { path: "/docs", title: "Docs" } });
+    expect(bodies[1]).toMatchObject({ metadata: { "guuey/pageContext": { path: "/docs", title: "Docs" } } });
     unmount();
   });
 });

@@ -85,6 +85,7 @@ describe("<GuueyChat> on a closed conversation", () => {
     fireEvent.change(input, { target: { value: "again" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(a.calls).toHaveLength(2));
-    expect(threadIdOf(a.calls[1]?.body)).toBeUndefined();
+    // Request shape 2 names first contact as `threadId: ""`, which the runtime reads as absent.
+    expect(threadIdOf(a.calls[1]?.body)).toBe("");
   });
 });

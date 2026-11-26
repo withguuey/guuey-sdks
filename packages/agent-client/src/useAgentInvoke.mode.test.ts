@@ -41,7 +41,12 @@ describe("useAgentInvoke — mode carriage (guuey#566)", () => {
     await act(async () => {
       await result.current.send("hello");
     });
-    expect(bodies[0]).toMatchObject({ input: "hello", mode: "rep" });
+    // Request shape 2: the mode rides the AgInput's guuey metadata.
+    expect(bodies[0]).toMatchObject({
+      kind: "start",
+      messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      metadata: { "guuey/mode": "rep" },
+    });
     unmount();
   });
 
@@ -60,12 +65,12 @@ describe("useAgentInvoke — mode carriage (guuey#566)", () => {
     await act(async () => {
       await result.current.send("hi");
     });
-    expect(Object.keys(bodies[0] as Record<string, never>)).not.toContain("mode");
+    expect(bodies[0]).not.toHaveProperty(["metadata", "guuey/mode"]);
     rerender({ mode: "agent" });
     await act(async () => {
       await result.current.send("now signed in");
     });
-    expect(bodies[1]).toMatchObject({ mode: "agent" });
+    expect(bodies[1]).toMatchObject({ metadata: { "guuey/mode": "agent" } });
     unmount();
   });
 });

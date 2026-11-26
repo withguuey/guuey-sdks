@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { AGJSON_VERSION } from "@silverprotocol/core";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
 import { AgentResponseError } from "./errors.js";
@@ -73,7 +74,14 @@ describe("useAgentInvoke — a Retry replaces its failed row (guuey#2608)", () =
     ]);
     expect(result.current.sendStates).toEqual({});
     // Local only: the wire carries the retry's own id and nothing about the row it replaced.
-    expect(bodies[1]).toEqual({ input: "hello", clientMessageId: "cmid-2" });
+    expect(bodies[1]).toEqual({
+      protocol: "agjson",
+      version: AGJSON_VERSION,
+      threadId: "",
+      turnId: "cmid-2",
+      kind: "start",
+      messages: [{ id: "cmid-2", role: "user", content: [{ type: "text", text: "hello" }] }],
+    });
     unmount();
   });
 

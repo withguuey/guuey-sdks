@@ -170,10 +170,19 @@ describe("<GuueyChat> forgets A2UI edits with the conversation (guuey#2382)", ()
 
 /**
  * guuey#2384 (spec §9.1; S4 RED (d)): a press goes out as an ordinary turn
- * through the composer's own gate. Its body is a typed turn's (input and
- * clientMessageId, no new field), its input the action text; mid-turn the
- * gate refuses it and the surface says to wait.
+ * through the composer's own gate. Its body is a typed turn's (request shape
+ * 2: the one user message under its turn id, no new field), its words the
+ * action text; mid-turn the gate refuses it and the surface says to wait.
  */
+/** The words of a shape-2 body's one message: its text block's text. */
+function wordsOf(body: { [key: string]: unknown }): unknown {
+  const messages = body["messages"];
+  const message: unknown = Array.isArray(messages) ? messages[0] : undefined;
+  const content: unknown = typeof message === "object" && message !== null ? Reflect.get(message, "content") : undefined;
+  const block: unknown = Array.isArray(content) ? content[0] : undefined;
+  return typeof block === "object" && block !== null ? Reflect.get(block, "text") : undefined;
+}
+
 describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#2384)", () => {
   /** A transport that records each body; the second turn holds open until released. */
   function recording() {
@@ -210,11 +219,11 @@ describe("<GuueyChat> sends an A2UI action through the composer's gate (guuey#23
     fireEvent.click(screen.getByRole("button", { name: "Place order" }));
     await waitFor(() => expect(t.bodies).toHaveLength(2));
     const body = t.bodies[1]!;
-    // A typed turn's body (spec §9.1): input, clientMessageId, the thread and the capabilities; no new field.
-    expect(Object.keys(body).sort()).toEqual(["capabilities", "clientMessageId", "input", "threadId"]);
+    // A typed turn's body (spec §9.1): request shape 2's members, the thread and the capabilities; no new field.
+    expect(Object.keys(body).sort()).toEqual(["capabilities", "kind", "messages", "protocol", "threadId", "turnId", "version"]);
     expect(body["capabilities"]).toEqual(t.bodies[0]!["capabilities"]);
-    const id = body["clientMessageId"];
-    expect(body["input"]).toBe(
+    const id = body["turnId"];
+    expect(wordsOf(body)).toBe(
       [
         "Place order: Name = Ada",
         `<guuey_a2ui_action surface="order" action="submit" source="go" id="${String(id)}">`,

@@ -272,7 +272,7 @@ describe("<GuueyChat voice> (guuey#2446)", () => {
   it("the status line is placed like the attachment notice: the composer form's own row, above the field and its buttons", () => {
     installSpeech();
     const { adapters } = podAdapters();
-    renderChat(adapters, { attachments: true });
+    renderChat(adapters, { parts: { image: true } });
     fireEvent.click(mic());
     const status = screen.getByRole("status");
     expect(status.className).toBe("guuey-chat-voice-status");
@@ -293,7 +293,7 @@ describe("<GuueyChat voice> (guuey#2446)", () => {
     fireEvent.keyDown(field(), { key: "Enter" });
     expect(rec(0).calls).toEqual(["start", "abort"]);
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]?.body).toMatchObject({ input: "send this" });
+    expect(calls[0]?.body).toMatchObject({ messages: [{ content: [{ type: "text", text: "send this" }] }] });
     rec(0).say(["send this", "and more"]);
     rec(0).end();
     expect(field().value).toBe("");
@@ -348,7 +348,7 @@ describe("<GuueyChat voice> (guuey#2446)", () => {
     rec(0).say(["by the button"]);
     fireEvent.click(screen.getByRole("button", { name: S.send }));
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]?.body).toMatchObject({ input: "by the button" });
+    expect(calls[0]?.body).toMatchObject({ messages: [{ content: [{ type: "text", text: "by the button" }] }] });
     expect(rec(0).calls).toEqual(["start", "abort"]);
   });
 

@@ -53,6 +53,15 @@ describe("buildInvokeBody — the one wire shape", () => {
     expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("inputKind");
   });
 
+  it("carries the message's context verbatim as the last key; an empty list or none carries no turnContext key", () => {
+    const turnContext = [{ type: "text" as const, text: "The visitor is on the Pro plan." }];
+    const body = buildInvokeBody({ input: "", clientMessageId: "c", inputKind: "context-only", turnContext });
+    expect(Object.keys(body)).toEqual(["input", "clientMessageId", "inputKind", "turnContext"]);
+    expect(body.turnContext).toEqual(turnContext);
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c" })).not.toHaveProperty("turnContext");
+    expect(buildInvokeBody({ input: "hi", clientMessageId: "c", turnContext: [] })).not.toHaveProperty("turnContext");
+  });
+
   it("carries capabilities, pageContext and mode verbatim, in the wire's key order", () => {
     const body = buildInvokeBody({
       input: "x",

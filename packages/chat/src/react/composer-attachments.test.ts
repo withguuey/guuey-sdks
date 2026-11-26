@@ -6,7 +6,13 @@
  */
 import { describe, expect, it } from "vitest";
 import { IMAGE_ATTACHMENT_MAX_BASE64_CHARS } from "@guuey/agent-client";
-import { ATTACHMENT_ACCEPT, readImageFile, type ImageDownscaler } from "./composer-attachments.js";
+import {
+  attachmentAcceptFor,
+  partKindOfFile,
+  readImageFile,
+  readPartFile,
+  type ImageDownscaler,
+} from "./composer-attachments.js";
 
 /** A 1×1 transparent PNG's bytes. */
 const PNG_1PX_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -83,7 +89,44 @@ describe("readImageFile", () => {
     expect(await readImageFile(file)).toMatchObject({ ok: true, attachment: { data: PNG_1PX_BASE64 } });
   });
 
-  it("the picker's accept list is exactly the allowlist", () => {
-    expect(ATTACHMENT_ACCEPT).toBe("image/jpeg,image/png,image/gif,image/webp");
+  it("the picker's accept list is the turned-on kinds' suggested types", () => {
+    expect(attachmentAcceptFor(["image"])).toBe("image/jpeg,image/png,image/gif,image/webp");
+    expect(attachmentAcceptFor(["audio", "document"])).toBe("audio/wav,audio/mpeg,application/pdf");
+    expect(attachmentAcceptFor([])).toBe("");
+  });
+});
+
+describe("partKindOfFile — the kind a picked file is, among the turned-on kinds", () => {
+  const typed = (type: string): Blob => new Blob([], { type });
+
+  it("a suggested list naming the type wins, then the type's family, else a file", () => {
+    const all = ["image", "audio", "file", "document"] as const;
+    expect(partKindOfFile(typed("image/png"), all)).toBe("image");
+    expect(partKindOfFile(typed("image/heic"), all)).toBe("image");
+    expect(partKindOfFile(typed("audio/webm"), all)).toBe("audio");
+    expect(partKindOfFile(typed("application/pdf"), all)).toBe("document");
+    expect(partKindOfFile(typed("text/csv"), all)).toBe("file");
+    expect(partKindOfFile(typed("application/zip"), all)).toBe("file");
+  });
+
+  it("a kind the host did not turn on is no kind", () => {
+    expect(partKindOfFile(typed("audio/webm"), ["image"])).toBeUndefined();
+    expect(partKindOfFile(typed("application/pdf"), ["image", "file"])).toBeUndefined();
+  });
+});
+
+describe("readPartFile — a file that is not an image, read as it is", () => {
+  it("keeps its type and bytes; a file with no type is sent as the generic binary type", async () => {
+    expect(await readPartFile(new File(["a,b"], "rows.csv", { type: "text/csv" }))).toEqual({
+      ok: true,
+      name: "rows.csv",
+      mediaType: "text/csv",
+      data: btoa("a,b"),
+    });
+    expect(await readPartFile(new File(["x"], "notes"))).toMatchObject({ ok: true, mediaType: "application/octet-stream" });
+  });
+
+  it("an empty file is unreadable", async () => {
+    expect(await readPartFile(new File([], "empty.txt", { type: "text/plain" }))).toEqual({ ok: false, name: "empty.txt", reason: "unreadable" });
   });
 });

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { AGJSON_VERSION } from "@silverprotocol/core";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import type { AgentInvokeAdapters, InvokeRequest } from "./types.js";
 
@@ -45,7 +46,12 @@ describe("useAgentInvoke — a tap's labels ride the send (guuey#2031)", () => {
       clientMessageId: "tap-1",
       tapLabels: ["What are your opening hours?", null],
     });
-    expect(bodies[0]).toMatchObject({ input: DIRECTIVE, clientMessageId: "tap-1", tapLabels: ["What are your opening hours?", null] });
+    // Request shape 2: the id is the message id and the turn id; the labels ride the guuey metadata.
+    expect(bodies[0]).toMatchObject({
+      turnId: "tap-1",
+      messages: [{ id: "tap-1", content: [{ type: "text", text: DIRECTIVE }] }],
+      metadata: { "guuey/tapLabels": ["What are your opening hours?", null] },
+    });
     unmount();
   });
 
@@ -57,8 +63,8 @@ describe("useAgentInvoke — a tap's labels ride the send (guuey#2031)", () => {
     });
     expect(result.current.messages[0]).toMatchObject({ clientMessageId: "tap-2" });
     expect(Object.keys(result.current.messages[0] ?? {})).not.toContain("tapLabels");
-    expect(bodies[0]).toMatchObject({ clientMessageId: "tap-2" });
-    expect(Object.keys(bodies[0] as Record<string, never>)).not.toContain("tapLabels");
+    expect(bodies[0]).toMatchObject({ turnId: "tap-2" });
+    expect(bodies[0]).not.toHaveProperty(["metadata", "guuey/tapLabels"]);
     unmount();
   });
 
@@ -69,7 +75,14 @@ describe("useAgentInvoke — a tap's labels ride the send (guuey#2031)", () => {
       await result.current.send("hello");
     });
     expect(result.current.messages[0]).toEqual({ role: "user", text: "hello", clientMessageId: "cmid-1", precedingTurnCount: 0 });
-    expect(bodies[0]).toEqual({ input: "hello", clientMessageId: "cmid-1" });
+    expect(bodies[0]).toEqual({
+      protocol: "agjson",
+      version: AGJSON_VERSION,
+      threadId: "",
+      turnId: "cmid-1",
+      kind: "start",
+      messages: [{ id: "cmid-1", role: "user", content: [{ type: "text", text: "hello" }] }],
+    });
     unmount();
   });
 

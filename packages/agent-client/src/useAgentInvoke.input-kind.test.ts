@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { AGJSON_VERSION } from "@silverprotocol/core";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { AGENT_ERROR_CODES, CLIENT_ERROR_CODES } from "./error-codes.js";
 import { AgentResponseError } from "./errors.js";
@@ -68,7 +69,16 @@ describe("useAgentInvoke — a turn without words (guuey#2549)", () => {
     await act(async () => {
       await result.current.send("   ", { inputKind: "context-only" });
     });
-    expect(bodies[0]).toEqual({ input: "", clientMessageId: "cmid-1", inputKind: "context-only" });
+    // Request shape 2: no text block, the kind in the guuey metadata.
+    expect(bodies[0]).toEqual({
+      protocol: "agjson",
+      version: AGJSON_VERSION,
+      threadId: "",
+      turnId: "cmid-1",
+      metadata: { "guuey/inputKind": "context-only" },
+      kind: "start",
+      messages: [{ id: "cmid-1", role: "user", content: [] }],
+    });
     expect(result.current.messages[0]).toEqual({
       role: "user",
       text: "",
@@ -84,7 +94,9 @@ describe("useAgentInvoke — a turn without words (guuey#2549)", () => {
   });
 
   it("a runtime that predates input kinds refuses it: INPUT_KIND_NOT_ADVERTISED, the row failed, the runtime's message kept, the offer cleared", async () => {
-    const { adapters } = podAdapters([{ session: OFFERED }, { refuse: OLD_POD_REFUSAL }]);
+    // Such a runtime predates request shape 2 too: the first turn falls back to shape 1 (W1), and the turn without
+    // words then goes as shape 1, where the same refusal is the input-kind refusal.
+    const { adapters, bodies } = podAdapters([{ refuse: OLD_POD_REFUSAL }, { session: OFFERED }, { refuse: OLD_POD_REFUSAL }]);
     const { result, unmount } = hook(adapters);
     await act(async () => {
       await result.current.send("hello");
@@ -95,6 +107,7 @@ describe("useAgentInvoke — a turn without words (guuey#2549)", () => {
     expect(result.current.errorCode).toBe(CLIENT_ERROR_CODES.INPUT_KIND_NOT_ADVERTISED);
     expect(result.current.error).toBe("input: non-empty string required");
     expect(result.current.sendStates).toEqual({ "cmid-2": "failed" });
+    expect(bodies[2]).toEqual({ input: "", threadId: "t-1", clientMessageId: "cmid-2", inputKind: "context-only" });
     expect(result.current.acceptedInputKinds).toEqual([]);
     unmount();
   });
@@ -127,11 +140,13 @@ describe("useAgentInvoke — a turn without words (guuey#2549)", () => {
   });
 
   it("a refusal message on a turn WITH words is not read as an input-kind refusal", async () => {
-    const { adapters } = podAdapters([{ refuse: OLD_POD_REFUSAL }]);
+    // Refused as shape 2 (W1 sends it once more as shape 1), then refused again as shape 1: the runtime's own code.
+    const { adapters, bodies } = podAdapters([{ refuse: OLD_POD_REFUSAL }, { refuse: OLD_POD_REFUSAL }]);
     const { result, unmount } = hook(adapters);
     await act(async () => {
       await result.current.send("hello", { inputKind: "context-only" });
     });
+    expect(bodies).toHaveLength(2);
     expect(result.current.errorCode).toBe(AGENT_ERROR_CODES.INVALID_REQUEST);
     unmount();
   });
@@ -154,7 +169,8 @@ describe("useAgentInvoke — a turn without words (guuey#2549)", () => {
     await act(async () => {
       await result.current.send("what is this?", { inputKind: "context-only" });
     });
-    expect(bodies[0]).toEqual({ input: "what is this?", clientMessageId: "cmid-1" });
+    expect(bodies[0]).toMatchObject({ messages: [{ content: [{ type: "text", text: "what is this?" }] }] });
+    expect(bodies[0]).not.toHaveProperty("metadata");
     expect(result.current.messages[0]?.inputKind).toBeUndefined();
     unmount();
   });

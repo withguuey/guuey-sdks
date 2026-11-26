@@ -1759,7 +1759,8 @@ describe("agentMode (guuey#566 carriage, added for guuey#1152)", () => {
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
     fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
     await waitFor(() => expect(pinned.calls).toHaveLength(1));
-    expect(pinned.calls[0].body).toMatchObject({ mode: "guest" });
+    // Request shape 2: the mode rides the AgInput's guuey metadata.
+    expect(pinned.calls[0].body).toMatchObject({ metadata: { "guuey/mode": "guest" } });
     cleanup();
 
     const unpinned = scriptedAdapters();
@@ -1767,7 +1768,7 @@ describe("agentMode (guuey#566 carriage, added for guuey#1152)", () => {
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hi" } });
     fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
     await waitFor(() => expect(unpinned.calls).toHaveLength(1));
-    expect(unpinned.calls[0].body).not.toHaveProperty("mode");
+    expect(unpinned.calls[0].body).not.toHaveProperty(["metadata", "guuey/mode"]);
   });
 });
 
@@ -1853,7 +1854,8 @@ describe("<GuueyChat> handle: a turn without words (guuey#2549)", () => {
     });
     expect(ok).toBe(true);
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]?.body).toMatchObject({ input: "", inputKind: "context-only" });
+    // Request shape 2: no text block, the kind in the guuey metadata.
+    expect(calls[0]?.body).toMatchObject({ metadata: { "guuey/inputKind": "context-only" }, messages: [{ content: [] }] });
     await waitFor(() => expect(screen.getByText("Hello.")).toBeTruthy());
     // The scripted frame offers no kinds.
     await waitFor(() => expect(handle.acceptedInputKinds).toEqual([]));
@@ -1872,6 +1874,6 @@ describe("<GuueyChat> handle: a turn without words (guuey#2549)", () => {
       expect(handle.send("what is this?", { inputKind: "context-only" })).toBe(true);
     });
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]?.body).not.toHaveProperty("inputKind");
+    expect(calls[0]?.body).not.toHaveProperty(["metadata", "guuey/inputKind"]);
   });
 });

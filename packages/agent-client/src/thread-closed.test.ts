@@ -213,7 +213,7 @@ describe("useAgentInvoke.threadClosed", () => {
     expect(h.result.current.threadId).toBe("t1");
   });
 
-  it("a send on a closed conversation starts a new one: no threadId on the wire, and the state clears", async () => {
+  it("a send on a closed conversation starts a new one: no thread named on the wire, and the state clears", async () => {
     const h = mount({
       transport: streaming(
         frame("session", { threadId: "t1" }),
@@ -225,7 +225,8 @@ describe("useAgentInvoke.threadClosed", () => {
     expect(h.result.current.threadId).toBe("t1");
     h.swap(streaming(frame("session", { threadId: "t2" }), frame("done", { stopReason: "end_turn", threadId: "t2" })));
     await h.send("new question");
-    expect(threadIdOf(h.requests[1]?.body)).toBeUndefined();
+    // Request shape 2 names first contact as `threadId: ""`, which the runtime reads as absent.
+    expect(threadIdOf(h.requests[1]?.body)).toBe("");
     expect(h.result.current.threadClosed).toBeNull();
     expect(h.result.current.threadId).toBe("t2");
     expect(h.saved).toContain("t2");
