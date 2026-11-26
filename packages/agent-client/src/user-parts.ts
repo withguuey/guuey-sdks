@@ -86,7 +86,8 @@ export type UserPartsVerdict = { ok: true; parts: UserPart[] } | { ok: false; re
 /** Standard base64: the 64-letter alphabet, padded to a multiple of 4, nothing else. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
-function isUserPartKind(type: string): type is UserPartKind {
+/** Whether `type` is one of {@link USER_PART_KINDS}. */
+export function isUserPartKind(type: string): type is UserPartKind {
   return (USER_PART_KINDS as readonly string[]).includes(type);
 }
 

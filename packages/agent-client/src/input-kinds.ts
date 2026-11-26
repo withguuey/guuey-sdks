@@ -15,6 +15,7 @@
  * reads its log lines must never reach `@guuey/worker`, whose worker writes
  * its own stdout and stderr by design. So this package does not depend on it.
  */
+import { isUserPartKind, USER_PART_KINDS, type UserPartKind } from "./user-parts.js";
 
 /** Every input kind this client can send, in wire spelling. */
 export const INPUT_KINDS = ["context-only"] as const;
@@ -36,28 +37,71 @@ export function userInputKindOf(role: string, inputKind: unknown): InputKind | u
   return role === "user" && isInputKind(inputKind) ? inputKind : undefined;
 }
 
+/** What a `session` frame says the runtime accepted ({@link readAccepts}). */
+export interface Accepts {
+  /** The input kinds the agent accepts on its NEXT turn (guuey#2549), known kinds only, each once, in wire order. */
+  inputKinds: readonly InputKind[];
+  /** How many of THIS turn's images it accepted (guuey#2293), only as a whole non-negative count. */
+  attachments?: number;
+  /**
+   * The highest request shape the runtime parses (request-shape design v6): `2` = the `AgInput` body. Absent on every
+   * runtime before it, so the client writes shape 1. One pod's hint, never a promise (W1 keeps a fallback).
+   */
+  requestShape?: number;
+  /** The user part kinds the agent takes on its NEXT turn (the per-kind gate's advertisement); `[]` when none listed. */
+  partKinds: readonly UserPartKind[];
+  /** How many of THIS turn's parts of each kind it accepted (the generalized per-kind ack), whole counts only. */
+  parts?: { readonly [kind in UserPartKind]?: number };
+}
+
+function wholeCount(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined;
+}
+
+/** A wire object's own member, read without a cast (the frame is untyped JSON). */
+function member(o: object, key: string): unknown {
+  const own: unknown = Object.getOwnPropertyDescriptor(o, key)?.value;
+  return own;
+}
+
 /**
- * What a `session` frame says the runtime accepted, read off its one `accepts`
- * block (guuey#2876):
- *  - `inputKinds`: the input kinds the agent accepts on its NEXT turn
- *    (guuey#2549), known kinds only, each once, in wire order; `[]` when the
- *    block lists none.
- *  - `attachments`: how many of THIS turn's images it accepted (guuey#2293),
- *    present only as a whole non-negative count.
- * An absent or malformed block reads as `{ inputKinds: [] }` (an older runtime
- * sends none), never a throw.
+ * What a `session` frame says the runtime accepted, read off its one `accepts` block (guuey#2876). Every member is
+ * optional on the wire: an absent or malformed block, or member, reads as "none" (an older runtime sends none), never a
+ * throw.
  */
-export function readAccepts(frame: unknown): { inputKinds: readonly InputKind[]; attachments?: number } {
-  if (typeof frame !== "object" || frame === null || !("accepts" in frame)) return { inputKinds: [] };
-  const accepts = frame.accepts;
-  if (typeof accepts !== "object" || accepts === null || Array.isArray(accepts)) return { inputKinds: [] };
+export function readAccepts(frame: unknown): Accepts {
+  const none: Accepts = { inputKinds: [], partKinds: [] };
+  if (typeof frame !== "object" || frame === null) return none;
+  const accepts = member(frame, "accepts");
+  if (typeof accepts !== "object" || accepts === null || Array.isArray(accepts)) return none;
   const inputKinds: InputKind[] = [];
-  const kinds = "inputKinds" in accepts ? accepts.inputKinds : undefined;
+  const kinds = member(accepts, "inputKinds");
   if (Array.isArray(kinds)) for (const kind of kinds) if (isInputKind(kind) && !inputKinds.includes(kind)) inputKinds.push(kind);
-  const attachments = "attachments" in accepts ? accepts.attachments : undefined;
-  return typeof attachments === "number" && Number.isInteger(attachments) && attachments >= 0
-    ? { inputKinds, attachments }
-    : { inputKinds };
+  const partKinds: UserPartKind[] = [];
+  const rawPartKinds = member(accepts, "partKinds");
+  if (Array.isArray(rawPartKinds)) {
+    for (const kind of rawPartKinds) {
+      if (typeof kind === "string" && isUserPartKind(kind) && !partKinds.includes(kind)) partKinds.push(kind);
+    }
+  }
+  const attachments = wholeCount(member(accepts, "attachments"));
+  const requestShape = wholeCount(member(accepts, "requestShape"));
+  const rawParts = member(accepts, "parts");
+  let parts: { [kind in UserPartKind]?: number } | undefined;
+  if (typeof rawParts === "object" && rawParts !== null && !Array.isArray(rawParts)) {
+    parts = {};
+    for (const kind of USER_PART_KINDS) {
+      const n = wholeCount(member(rawParts, kind));
+      if (n !== undefined) parts[kind] = n;
+    }
+  }
+  return {
+    inputKinds,
+    partKinds,
+    ...(attachments !== undefined ? { attachments } : {}),
+    ...(requestShape !== undefined ? { requestShape } : {}),
+    ...(parts !== undefined ? { parts } : {}),
+  };
 }
 
 /** The input kinds a `session` frame says the agent accepts ({@link readAccepts}'s `inputKinds`). */
