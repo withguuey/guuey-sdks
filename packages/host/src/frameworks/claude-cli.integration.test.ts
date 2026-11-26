@@ -133,16 +133,25 @@ function textTurn(text: string): Array<{ event: string; data: object }> {
   ];
 }
 
-function bashTurn(command: string): Array<{ event: string; data: object }> {
+/** A tool call the fake model makes once on the main conversation, before it answers. */
+interface ScriptedTool {
+  name: string;
+  input: { [key: string]: string };
+}
+
+/** The Bash report tool call: `command`, run once. */
+const bash = (command: string): ScriptedTool => ({ name: "Bash", input: { command, description: "report" } });
+
+function toolTurn(tool: ScriptedTool): Array<{ event: string; data: object }> {
   return [
     messageStart(),
     {
       event: "content_block_start",
-      data: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_2139", name: "Bash", input: {} } },
+      data: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_2139", name: tool.name, input: {} } },
     },
     {
       event: "content_block_delta",
-      data: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify({ command, description: "report" }) } },
+      data: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(tool.input) } },
     },
     { event: "content_block_stop", data: { type: "content_block_stop", index: 0 } },
     { event: "message_delta", data: { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { output_tokens: 5 } } },
@@ -157,8 +166,8 @@ interface TestTls {
   cert: Buffer;
 }
 
-/** A fake Anthropic API. The main conversation (marked system prompt) runs the Bash report once, then answers. Over https when `tls` is given. */
-async function startFakeUpstream(key: string, bashCommand: string | undefined, tls?: TestTls, marker?: string): Promise<{
+/** A fake Anthropic API. The main conversation (marked system prompt) makes the scripted tool call once, then answers. Over https when `tls` is given. */
+async function startFakeUpstream(key: string, tool: ScriptedTool | undefined, tls?: TestTls, marker?: string): Promise<{
   url: string;
   requests: UpstreamRequest[];
   close: () => Promise<void>;
@@ -197,7 +206,7 @@ async function startFakeUpstream(key: string, bashCommand: string | undefined, t
         messages: JSON.stringify(body.messages ?? []),
         at: Date.now(),
       });
-      const events = main && bashCommand !== undefined && !hasToolResult(body) ? bashTurn(bashCommand) : textTurn("done");
+      const events = main && tool !== undefined && !hasToolResult(body) ? toolTurn(tool) : textTurn("done");
       if (body.stream === true) {
         sse(res, events);
         return;
@@ -391,7 +400,7 @@ describe("real Claude CLI: private key + MCP delivery (guuey#2139)", () => {
       const mcpHeader = sentinel();
       const { fs, root } = turnDirs();
       const reportPath = join(root, "report.json");
-      const upstream = await startFakeUpstream(key, `${process.execPath} ${FIXTURE} ${reportPath}`);
+      const upstream = await startFakeUpstream(key, bash(`${process.execPath} ${FIXTURE} ${reportPath}`));
       const mcp = await startFakeMcp(mcpHeader, { delayMs: 500 });
       writeCredential(fs.session, "fake", mcp.url, mcpHeader);
       const stderr: string[] = [];
@@ -463,7 +472,7 @@ describe("real Claude CLI: private key + MCP delivery (guuey#2139)", () => {
       const key = sentinel();
       const { fs, root } = turnDirs();
       const reportPath = join(root, "report.json");
-      const upstream = await startFakeUpstream(key, `${process.execPath} ${FIXTURE} ${reportPath}`);
+      const upstream = await startFakeUpstream(key, bash(`${process.execPath} ${FIXTURE} ${reportPath}`));
       const spawns: SpawnRecord[] = [];
       const { events, emit } = collector();
       try {
@@ -651,7 +660,7 @@ describe("real Claude CLI: the CLI's Bash finds external commands on the host's 
     const key = sentinel();
     const { fs, root } = turnDirs();
     const outPath = join(root, "path-probe.txt");
-    const upstream = await startFakeUpstream(key, `command -v ls > ${outPath} 2>&1; echo "rc=$?" >> ${outPath}`);
+    const upstream = await startFakeUpstream(key, bash(`command -v ls > ${outPath} 2>&1; echo "rc=$?" >> ${outPath}`));
     const { events, emit } = collector();
     try {
       await runInvoke(
@@ -669,6 +678,57 @@ describe("real Claude CLI: the CLI's Bash finds external commands on the host's 
     const out = readFileSync(outPath, "utf8");
     expect(out).toMatch(/^\/\S*\/ls$/m);
     expect(out).toMatch(/^rc=0$/m);
+  });
+});
+
+/**
+ * A PIN of the pinned CLI's Read tool on a file a turn's parts are delivered as (design v7 D1): an AUDIO file in the
+ * session storage's `attachments` is refused as a binary file, so a Claude agent cannot hear an audio part through
+ * Read; a text file in the same place is read (the control, so the refusal is about the type and not the path). The
+ * fake model calls Read once; the next request carries the CLI's tool_result, which is what this reads. A CLI bump that
+ * changes either row turns this RED, and the platform's audio note is then re-decided on that evidence.
+ */
+describe("real Claude CLI: the Read tool refuses an audio file and reads a text file (pinned CLI behaviour)", () => {
+  async function readResult(name: string, bytes: Buffer): Promise<{ toolResult: string; done: boolean }> {
+    const key = sentinel();
+    const { fs } = turnDirs();
+    mkdirSync(join(fs.session, "attachments"), { recursive: true });
+    const path = join(fs.session, "attachments", name);
+    writeFileSync(path, bytes);
+    const upstream = await startFakeUpstream(key, { name: "Read", input: { file_path: path } });
+    const { events, emit } = collector();
+    try {
+      await runInvoke(
+        { systemPrompt: `${MAIN_MARKER}: read the file once, then answer.` },
+        { input: "go", identity: { userId: "u-read", authMode: "anonymous" }, fs, fsBound: true, history: [] },
+        { baseUrl: upstream.url, authToken: key, listCredentials: () => [] },
+        emit,
+        recordingQuery([], { statusPending: [] }),
+      );
+    } finally {
+      await upstream.close();
+    }
+    const after = upstream.requests.filter((r) => r.main && r.messages.includes("tool_result"));
+    return {
+      toolResult: after[0]?.messages ?? "",
+      done: events.some((e) => e.type === "done"),
+    };
+  }
+
+  it("a .wav is refused as a binary file", { timeout: TURN_BUDGET_MS }, async () => {
+    const wav = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVEfmt "), Buffer.alloc(32)]);
+    const { toolResult, done } = await readResult("probe.wav", wav);
+    expect(done).toBe(true);
+    expect(toolResult).toContain(
+      "This tool cannot read binary files. The file appears to be a binary .wav file. Please use appropriate tools for binary file analysis.",
+    );
+  });
+
+  it("the control: a .txt in the same folder is read", { timeout: TURN_BUDGET_MS }, async () => {
+    const { toolResult, done } = await readResult("probe.txt", Buffer.from("READ-CONTROL-LINE"));
+    expect(done).toBe(true);
+    expect(toolResult).toContain("READ-CONTROL-LINE");
+    expect(toolResult).not.toContain("cannot read binary files");
   });
 });
 
