@@ -75,13 +75,17 @@ import {
   createUiResourceReader,
   createWebAdapters,
   deleteThread,
-  IMAGE_ATTACHMENTS_MAX_COUNT,
-  IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
+  AUDIO_PARTS_MAX_COUNT,
+  MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
+  MEDIA_INBOUND_MAX_PARTS_PER_TURN,
+  MEDIA_INBOUND_TURN_MAX_BASE64_CHARS,
   mergeGuestThreads,
+  USER_PART_KINDS,
   type AgentInvokeAdapters,
-  type ImageAttachment,
   type InputKind,
   type SendOptions,
+  type UserPartCandidate,
+  type UserPartKind,
 } from "@guuey/agent-client";
 import type { AgHitlAnswer, AgPausedAsk } from "@silverprotocol/core";
 import {
@@ -128,7 +132,13 @@ import type { ClaimedTap } from "../tap-ledger.js";
 import { oauthPromptAction, useOAuthReturn } from "./oauth-return.js";
 import { oauthReturnNoticeLine, oauthReturnTone } from "../oauth.js";
 import { PARTS } from "./parts.js";
-import { ATTACHMENT_ACCEPT, readImageFile, type AttachmentRefusalReason } from "./composer-attachments.js";
+import {
+  attachmentAcceptFor,
+  partKindOfFile,
+  readImageFile,
+  readPartFile,
+  type AttachmentRefusalReason,
+} from "./composer-attachments.js";
 import { ChatHeader, type GuueyChatHeader } from "./chat-header.js";
 import { joinSpeechText, type SpeechInputState } from "../speech-input.js";
 import { useSpeechInput } from "./use-speech-input.js";
@@ -397,15 +407,17 @@ export interface GuueyChatProps {
    */
   composer?: boolean;
   /**
-   * The composer's image affordance (guuey#2293), default `false`. On, the
-   * built-in composer carries an attach button (JPEG, PNG, GIF, WebP), takes
-   * pasted images, shows each as a preview with its own Remove button, and
-   * sends them with the turn (`send(text, { attachments })`). A runtime that
-   * does not acknowledge the images ends the turn with
-   * `ATTACHMENTS_UNSUPPORTED`, read as `strings.errorAttachmentsUnsupported`.
-   * Off, the composer and every body it sends are exactly as before.
+   * The composer's attach affordance, one switch per part kind, every one off
+   * by default. With any kind on, the built-in composer carries an attach
+   * button whose picker suggests that kind's types, takes pasted files, shows
+   * each as a preview (an image) or by name (anything else) with its own
+   * Remove button, and sends them with the turn (`send(text, { parts })`).
+   * Which types an agent reads is its runtime's word: a runtime that does not
+   * acknowledge every part ends the turn with `PARTS_UNSUPPORTED`, read as
+   * `strings.errorPartsUnsupported`. All off, the composer and every body it
+   * sends are exactly as before.
    */
-  attachments?: boolean;
+  parts?: { image?: boolean; audio?: boolean; file?: boolean; document?: boolean };
   /**
    * guuey#2446 — composer dictation over the browser's Web Speech API,
    * default `false`. The audio goes to the browser's own speech service
@@ -620,17 +632,34 @@ export function kitSinkInEffect(viewProps: TranscriptItemContext["viewProps"]): 
   return !Object.hasOwn(viewProps, "onUserMessage");
 }
 
-/** guuey#2293 — one image waiting in the composer: its wire shape, its preview and its file name. */
-interface PendingImage {
+/** One file waiting in the composer: its kind, its inline bytes, its name, and an image's preview. */
+interface PendingPart {
   id: string;
   name: string;
-  attachment: ImageAttachment;
-  previewUrl: string;
+  kind: UserPartKind;
+  mediaType: string;
+  data: string;
+  /** An image's `data:` preview; `null` for a part drawn by its name. */
+  previewUrl: string | null;
 }
 
-/** The send options for a composer turn's images; `undefined` for none (the body is then exactly as before). */
-function sendOptionsFor(images: readonly ImageAttachment[]): SendOptions | undefined {
-  return images.length > 0 ? { attachments: images } : undefined;
+/** A waiting file as the part it is sent as; a file keeps its name, a document its title. */
+function partOf(p: PendingPart): UserPartCandidate {
+  const source = { type: "base64", mediaType: p.mediaType, data: p.data };
+  if (p.kind === "file") return { type: "file", source, filename: p.name };
+  if (p.kind === "document") return { type: "document", source, title: p.name };
+  return { type: p.kind, source };
+}
+
+/** At most this many parts of a kind wait in the composer (the judge's per-kind caps); `undefined` = only the turn's. */
+const PENDING_KIND_CAP: { readonly [kind in UserPartKind]?: number } = {
+  image: MEDIA_INBOUND_MAX_IMAGES_PER_TURN,
+  audio: AUDIO_PARTS_MAX_COUNT,
+};
+
+/** The send options for a composer turn's parts; `undefined` for none (the body is then exactly as before). */
+function sendOptionsFor(parts: readonly UserPartCandidate[]): SendOptions | undefined {
+  return parts.length > 0 ? { parts } : undefined;
 }
 
 /**
@@ -666,7 +695,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     mode = "light",
     surface = "card",
     composer = true,
-    attachments: attachmentsEnabled = false,
+    parts: partsProp,
     voice: voiceEnabled = false,
     voiceLang,
     voiceMaxDurationMs,
@@ -979,30 +1008,45 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // listen and sends — the user answers in either channel, card or text.
   const waitingOnUser = isWaitingOnUser(invoke.status, invoke.activeTool);
   /** A reply typed during a listen: sent once the aborted listen has unwound (the hook refuses `send` mid-turn by design). */
-  const replyAfterListenRef = useRef<{ text: string; attachments: readonly ImageAttachment[] } | null>(null);
+  const replyAfterListenRef = useRef<{ text: string; parts: readonly UserPartCandidate[] } | null>(null);
   useEffect(() => {
     if (invoke.status !== "ready") return;
     const reply = replyAfterListenRef.current;
     if (reply === null) return;
     replyAfterListenRef.current = null;
     analytics.messageSent();
-    void invoke.send(reply.text, sendOptionsFor(reply.attachments)).catch(() => {
+    void invoke.send(reply.text, sendOptionsFor(reply.parts)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
   }, [invoke.status, invoke, analytics]);
-  // guuey#2293 — the images waiting to go with the next send, and the status
-  // line naming a file the composer did not take. A ref mirrors the list so
-  // a pick judges the count and the turn's size against the CURRENT list,
-  // not a render-old closure (two quick picks must not both see room).
-  const [pendingImages, setPendingImagesState] = useState<readonly PendingImage[]>([]);
-  const pendingImagesRef = useRef<readonly PendingImage[]>([]);
-  const setPendingImages = useCallback((next: readonly PendingImage[]): void => {
-    pendingImagesRef.current = next;
-    setPendingImagesState(next);
+  // The part kinds the host turned on, in the protocol's order. Keyed on the
+  // four switches, so a host passing a fresh object each render keeps the list.
+  const imageOn = partsProp?.image === true;
+  const audioOn = partsProp?.audio === true;
+  const fileOn = partsProp?.file === true;
+  const documentOn = partsProp?.document === true;
+  const enabledKinds = useMemo(
+    (): readonly UserPartKind[] =>
+      USER_PART_KINDS.filter((kind) =>
+        kind === "image" ? imageOn : kind === "audio" ? audioOn : kind === "file" ? fileOn : documentOn,
+      ),
+    [imageOn, audioOn, fileOn, documentOn],
+  );
+  const attachmentsEnabled = enabledKinds.length > 0;
+  const onlyImages = enabledKinds.length === 1 && enabledKinds[0] === "image";
+  // The files waiting to go with the next send, and the status line naming a
+  // file the composer did not take. A ref mirrors the list so a pick judges
+  // the counts and the turn's size against the CURRENT list, not a render-old
+  // closure (two quick picks must not both see room).
+  const [pendingParts, setPendingPartsState] = useState<readonly PendingPart[]>([]);
+  const pendingPartsRef = useRef<readonly PendingPart[]>([]);
+  const setPendingParts = useCallback((next: readonly PendingPart[]): void => {
+    pendingPartsRef.current = next;
+    setPendingPartsState(next);
   }, []);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingImageIdRef = useRef(0);
+  const pendingPartIdRef = useRef(0);
   // guuey#605 — the connect-first gate. While an `authMode:'upfront'` OAuth
   // server is pending connection the RUNTIME refuses every turn before any
   // model call, so inviting a message here would only spend one to be told
@@ -1018,7 +1062,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
   // conversation. Every send path reads this one gate (the textarea, Send,
   // dictation, and an A2UI action's press, guuey#2384).
   const composerClosed = !available || authRequired !== null || threadClosed;
-  const canSend = !composerClosed && (!busy || waitingOnUser) && (input.trim() !== "" || pendingImages.length > 0);
+  const canSend = !composerClosed && (!busy || waitingOnUser) && (input.trim() !== "" || pendingParts.length > 0);
 
   // ── Dictation (guuey#2446) ───────────────────────────────────────────
   // The engine exists only when voice is on, so an off chat reads no speech
@@ -1539,13 +1583,19 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
 
   const submit = useCallback((): void => {
     const typed = input.trim();
-    const images = pendingImagesRef.current.map((p) => p.attachment);
+    const pending = pendingPartsRef.current;
+    const parts = pending.map(partOf);
     // guuey#605: the connect-first gate belongs on the SEND path too, not
     // just the disabled attribute — an Enter keypress reaches here directly.
-    if ((typed === "" && images.length === 0) || composerClosed) return;
-    // guuey#2293: images with no words still need a non-empty input (every
-    // runtime refuses an empty one); the kit's neutral line stands in.
-    const text = typed !== "" ? typed : policy.strings.attachmentsOnlyInput;
+    if ((typed === "" && parts.length === 0) || composerClosed) return;
+    // guuey#2293: parts with no words still need words (every runtime refuses
+    // a turn with neither); the kit's neutral line stands in.
+    const text =
+      typed !== ""
+        ? typed
+        : pending.every((p) => p.kind === "image")
+          ? policy.strings.attachmentsOnlyInput
+          : policy.strings.filesOnlyInput;
     // An Enter while the agent streams sends nothing, so it leaves a live
     // dictation alone too.
     if (busy && !waitingOnUser) return;
@@ -1556,71 +1606,114 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
       // guuey#1038: a reply during a listen ENDS the listen (abort = the
       // cancel ggui's handler honours) and goes out as the next turn once
       // the hook is ready again — one gesture, no manual Stop.
-      replyAfterListenRef.current = { text, attachments: images };
+      replyAfterListenRef.current = { text, parts };
       setInput("");
-      setPendingImages([]);
+      setPendingParts([]);
       setAttachmentNotice(null);
       invoke.abort();
       return;
     }
     setInput("");
-    setPendingImages([]);
+    setPendingParts([]);
     setAttachmentNotice(null);
     analytics.messageSent();
-    void invoke.send(text, sendOptionsFor(images)).catch(() => {
+    void invoke.send(text, sendOptionsFor(parts)).catch(() => {
       // The hook surfaces the failure (`error` / R0 failed-send).
     });
-  }, [input, composerClosed, busy, waitingOnUser, invoke, analytics, policy.strings, setPendingImages, abortSpeech]);
+  }, [input, composerClosed, busy, waitingOnUser, invoke, analytics, policy.strings, setPendingParts, abortSpeech]);
 
-  // guuey#2293 — take picked or pasted files: the count and the turn's size
-  // are judged against the list as it stands, each file is read (and redrawn
-  // smaller where the browser can), and every file not taken is named.
-  const addImageFiles = useCallback(
+  // Take picked or pasted files: each is given its kind (only the kinds the
+  // host turned on), the counts and the turn's size are judged against the
+  // list as it stands, each file is read (an image redrawn smaller where the
+  // browser can), and every file not taken is named.
+  const addFiles = useCallback(
     async (files: readonly File[]): Promise<void> => {
       if (files.length === 0) return;
       const refusals: string[] = [];
       const refuse = (name: string, reason: AttachmentRefusalReason): void => {
         refusals.push(policy.strings.attachmentRefused(name, reason));
       };
-      const room = IMAGE_ATTACHMENTS_MAX_COUNT - pendingImagesRef.current.length;
-      const taken = files.slice(0, Math.max(0, room));
-      for (const file of files.slice(taken.length)) refuse(file.name, "too_many");
-      const results = await Promise.all(taken.map((file) => readImageFile(file)));
-      let next = pendingImagesRef.current;
-      for (const result of results) {
-        if (!result.ok) {
-          refuse(result.name, result.reason);
+      const countOf = (list: readonly { kind: UserPartKind }[], kind: UserPartKind): number =>
+        list.filter((p) => p.kind === kind).length;
+      // The counts first, in pick order, so the files past a cap are refused
+      // without being read.
+      const taken: { file: File; kind: UserPartKind }[] = [];
+      for (const file of files) {
+        const kind = partKindOfFile(file, enabledKinds);
+        if (kind === undefined) {
+          refuse(file.name, "unsupported_type");
           continue;
         }
-        if (next.length >= IMAGE_ATTACHMENTS_MAX_COUNT) {
-          refuse(result.name, "too_many");
+        const waiting = [...pendingPartsRef.current, ...taken];
+        const kindCap = PENDING_KIND_CAP[kind];
+        if (waiting.length >= MEDIA_INBOUND_MAX_PARTS_PER_TURN || (kindCap !== undefined && countOf(waiting, kind) >= kindCap)) {
+          refuse(file.name, "too_many");
           continue;
         }
-        const total = next.reduce((sum, p) => sum + p.attachment.data.length, 0);
-        if (total + result.attachment.data.length > IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS) {
-          refuse(result.name, "too_large");
+        taken.push({ file, kind });
+      }
+      const results = await Promise.all(
+        taken.map(async ({ file, kind }) => {
+          if (kind !== "image") return { kind, read: await readPartFile(file), previewOf: false };
+          const image = await readImageFile(file);
+          return {
+            kind,
+            read: image.ok ? { ok: true as const, name: image.name, mediaType: image.attachment.mimeType, data: image.attachment.data } : image,
+            previewOf: true,
+          };
+        }),
+      );
+      let next = pendingPartsRef.current;
+      for (const { kind, read, previewOf } of results) {
+        if (!read.ok) {
+          refuse(read.name, read.reason);
           continue;
         }
-        pendingImageIdRef.current += 1;
+        const kindCap = PENDING_KIND_CAP[kind];
+        if (next.length >= MEDIA_INBOUND_MAX_PARTS_PER_TURN || (kindCap !== undefined && countOf(next, kind) >= kindCap)) {
+          refuse(read.name, "too_many");
+          continue;
+        }
+        const total = next.reduce((sum, p) => sum + p.data.length, 0);
+        if (total + read.data.length > MEDIA_INBOUND_TURN_MAX_BASE64_CHARS) {
+          refuse(read.name, "too_large");
+          continue;
+        }
+        pendingPartIdRef.current += 1;
         next = [
           ...next,
-          { id: `img-${pendingImageIdRef.current}`, name: result.name, attachment: result.attachment, previewUrl: result.previewUrl },
+          {
+            id: `part-${pendingPartIdRef.current}`,
+            name: read.name,
+            kind,
+            mediaType: read.mediaType,
+            data: read.data,
+            previewUrl: previewOf ? `data:${read.mediaType};base64,${read.data}` : null,
+          },
         ];
       }
-      setPendingImages(next);
+      setPendingParts(next);
       setAttachmentNotice(refusals.length > 0 ? refusals.join(" ") : null);
     },
-    [policy.strings, setPendingImages],
+    [policy.strings, setPendingParts, enabledKinds],
   );
 
-  const removePendingImage = useCallback(
+  const removePendingPart = useCallback(
     (id: string): void => {
-      setPendingImages(pendingImagesRef.current.filter((p) => p.id !== id));
+      setPendingParts(pendingPartsRef.current.filter((p) => p.id !== id));
       setAttachmentNotice(null);
       inputRef.current?.focus();
     },
-    [setPendingImages],
+    [setPendingParts],
   );
+  // The attach button holds while no turned-on kind has room left.
+  const pickRoom =
+    pendingParts.length < MEDIA_INBOUND_MAX_PARTS_PER_TURN &&
+    enabledKinds.some((kind) => {
+      const cap = PENDING_KIND_CAP[kind];
+      return cap === undefined || pendingParts.filter((p) => p.kind === kind).length < cap;
+    });
+  const attachLabel = onlyImages ? policy.strings.attachImage : policy.strings.attachFile;
 
   // guuey#2355: open a new conversation from the closed one. The hook's reset
   // drops the closed thread (pointer + storage, transcript, the closed state);
@@ -1631,12 +1724,12 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
     invoke.reset();
     a2uiEditsRef.current.clear();
     setInput("");
-    setPendingImages([]);
+    setPendingParts([]);
     setAttachmentNotice(null);
     setPendingLink(null);
     pendingDoorbellsRef.current = [];
     echoRef.current.reset();
-  }, [invoke, setPendingImages, abortSpeech]);
+  }, [invoke, setPendingParts, abortSpeech]);
 
   const handleRetry = useCallback(
     (item: UserMessageItem) => {
@@ -1847,16 +1940,20 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
             {voiceStatus}
           </p>
         )}
-        {attachmentsEnabled && pendingImages.length > 0 && (
+        {attachmentsEnabled && pendingParts.length > 0 && (
           <ul className="guuey-chat-attachments" part={PARTS.attachments} aria-label={strings.attachmentsLabel}>
-            {pendingImages.map((p) => (
+            {pendingParts.map((p) => (
               <li key={p.id} className="guuey-chat-attachment">
-                <img className="guuey-chat-attachment-preview" src={p.previewUrl} alt={p.name} />
+                {p.previewUrl !== null ? (
+                  <img className="guuey-chat-attachment-preview" src={p.previewUrl} alt={p.name} />
+                ) : (
+                  <span className="guuey-chat-attachment-file">{p.name}</span>
+                )}
                 <button
                   type="button"
                   className="guuey-chat-attachment-remove"
                   aria-label={strings.removeAttachment(p.name)}
-                  onClick={() => removePendingImage(p.id)}
+                  onClick={() => removePendingPart(p.id)}
                 >
                   <span aria-hidden="true">×</span>
                 </button>
@@ -1869,7 +1966,7 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
             <input
               ref={fileInputRef}
               type="file"
-              accept={ATTACHMENT_ACCEPT}
+              accept={attachmentAcceptFor(enabledKinds)}
               multiple
               hidden
               tabIndex={-1}
@@ -1878,16 +1975,16 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
                 const files = Array.from(e.target.files ?? []);
                 // Cleared so picking the same file again fires a change.
                 e.target.value = "";
-                void addImageFiles(files);
+                void addFiles(files);
               }}
             />
             <button
               type="button"
               className="guuey-chat-composer-attach"
               part={PARTS.composerAttach}
-              aria-label={strings.attachImage}
-              title={strings.attachImage}
-              disabled={composerClosed || pendingImages.length >= IMAGE_ATTACHMENTS_MAX_COUNT}
+              aria-label={attachLabel}
+              title={attachLabel}
+              disabled={composerClosed || !pickRoom}
               onClick={() => fileInputRef.current?.click()}
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1933,10 +2030,10 @@ export const GuueyChat = forwardRef<GuueyChatHandle, GuueyChatProps>(function Gu
           onPaste={
             attachmentsEnabled
               ? (e) => {
-                  // guuey#2293: pasted images join the previews; pasted text
+                  // guuey#2293: pasted files join the previews; pasted text
                   // is left to the textarea (no preventDefault).
                   const files = Array.from(e.clipboardData.files);
-                  if (files.length > 0) void addImageFiles(files);
+                  if (files.length > 0) void addFiles(files);
                 }
               : undefined
           }

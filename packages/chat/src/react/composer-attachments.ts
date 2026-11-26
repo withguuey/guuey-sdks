@@ -1,7 +1,14 @@
 /**
- * The web composer's image reader (guuey#2293): a picked or pasted file
- * becomes one inline image attachment, or a named refusal.
+ * The web composer's file readers: a picked or pasted file becomes one inline
+ * part of the kind it is (an image, a recording, a text file, a document), or
+ * a named refusal.
  *
+ * Which kind a file is follows the picker's suggested media types, then the
+ * type's family (`image/`, `audio/`, a PDF), else it is a file. Only the kinds
+ * the host turned on are taken. Which types an agent reads is its runtime's
+ * word, so a type off the suggested lists is still sent.
+ *
+ * Images (guuey#2293):
  * The rules are `@guuey/agent-client`'s (the allowlist and the per-image cap);
  * this module only gets a browser `File` into that shape. Before the cap is
  * checked, a still image whose long edge is over {@link DOWNSCALE_LONG_EDGE_PX}
@@ -13,13 +20,38 @@
  */
 import {
   IMAGE_ATTACHMENT_MAX_BASE64_CHARS,
-  IMAGE_ATTACHMENT_MIME_TYPES,
   isImageAttachmentMimeType,
+  MEDIA_INBOUND_PART_MAX_BASE64_CHARS,
+  USER_PART_SUGGESTED_MIME_TYPES,
   type ImageAttachment,
+  type UserPartKind,
 } from "@guuey/agent-client";
 
-/** The file input's `accept`: exactly the allowlist. */
-export const ATTACHMENT_ACCEPT = IMAGE_ATTACHMENT_MIME_TYPES.join(",");
+/** The file input's `accept` for the kinds the host turned on: their suggested media types, a hint for the picker. */
+export function attachmentAcceptFor(kinds: readonly UserPartKind[]): string {
+  return kinds.flatMap((kind) => USER_PART_SUGGESTED_MIME_TYPES[kind]).join(",");
+}
+
+/** The media type a file without one is sent as: the generic binary type, which names nothing it is not. */
+const UNKNOWN_MEDIA_TYPE = "application/octet-stream";
+
+/**
+ * The kind a picked file is, among the kinds the host turned on, or `undefined` when none fits (the composer refuses
+ * it as `unsupported_type`). A suggested list naming the type wins; then the type's family; a text file or anything
+ * else is a `file`.
+ */
+export function partKindOfFile(file: Blob, kinds: readonly UserPartKind[]): UserPartKind | undefined {
+  const listed = kinds.find((kind) => USER_PART_SUGGESTED_MIME_TYPES[kind].includes(file.type));
+  if (listed !== undefined) return listed;
+  const family: UserPartKind = file.type.startsWith("image/")
+    ? "image"
+    : file.type.startsWith("audio/")
+      ? "audio"
+      : file.type === "application/pdf"
+        ? "document"
+        : "file";
+  return kinds.includes(family) ? family : undefined;
+}
 
 /** The long edge a larger still image is redrawn to. */
 export const DOWNSCALE_LONG_EDGE_PX = 1568;
@@ -35,6 +67,11 @@ export type ImageDownscaler = (file: Blob) => Promise<Blob | null>;
 
 /** Why the composer did not take a file. */
 export type AttachmentRefusalReason = "unsupported_type" | "too_large" | "too_many" | "unreadable";
+
+/** One non-image file, read as it is: its media type, its base64 bytes and its name. */
+export type ReadPartFileResult =
+  | { ok: true; name: string; mediaType: string; data: string }
+  | { ok: false; name: string; reason: "too_large" | "unreadable" };
 
 export type ReadImageFileResult =
   | { ok: true; name: string; attachment: ImageAttachment; previewUrl: string }
@@ -116,4 +153,23 @@ export async function readImageFile(
     attachment: { kind: "inline", mimeType, data },
     previewUrl: `data:${mimeType};base64,${data}`,
   };
+}
+
+/**
+ * Read one picked or pasted file that is not an image (a recording, a text file, a document) as it is: never redrawn,
+ * never judged by type. A file the browser cannot read is `unreadable`; one over the per-part cap is `too_large`.
+ */
+export async function readPartFile(file: File): Promise<ReadPartFileResult> {
+  const name = file.name;
+  let dataUrl: string;
+  try {
+    dataUrl = await readDataUrl(file);
+  } catch {
+    return { ok: false, name, reason: "unreadable" };
+  }
+  const comma = dataUrl.indexOf(",");
+  const data = comma === -1 ? "" : dataUrl.slice(comma + 1);
+  if (data === "") return { ok: false, name, reason: "unreadable" };
+  if (data.length > MEDIA_INBOUND_PART_MAX_BASE64_CHARS) return { ok: false, name, reason: "too_large" };
+  return { ok: true, name, mediaType: file.type !== "" ? file.type : UNKNOWN_MEDIA_TYPE, data };
 }

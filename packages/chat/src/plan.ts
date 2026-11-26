@@ -1459,10 +1459,12 @@ const CODE_COPY: Record<string, (s: import("./strings.js").ChatStrings) => strin
   // transient family's Retry stays (no ERROR_FAMILIES entry), since the stop
   // is often intermittent.
   NO_REPLY: (s) => s.errorNoReply,
-  // guuey#2293: the turn's images — the runtime did not take them, or the
-  // send's list broke the rules. Both are "change the request" (no Retry).
-  ATTACHMENTS_UNSUPPORTED: (s) => s.errorAttachmentsUnsupported,
-  ATTACHMENTS_INVALID: (s) => s.errorAttachmentsInvalid,
+  // The turn's parts: the runtime did not take them, or the send's list broke
+  // the rules (the client's PARTS_INVALID, or the runtime's own refusal of an
+  // image, ATTACHMENTS_INVALID). All are "change the request" (no Retry).
+  PARTS_UNSUPPORTED: (s) => s.errorPartsUnsupported,
+  PARTS_INVALID: (s) => s.errorPartsInvalid,
+  ATTACHMENTS_INVALID: (s) => s.errorPartsInvalid,
   // guuey#2549: a turn without words the agent does not take (its worker
   // turned it down, or its runtime refused it before it started). Both are
   // "add a few words" (no Retry: the same turn meets the same refusal).
@@ -1558,8 +1560,9 @@ const ERROR_FAMILIES: Record<string, "auth" | "quota" | "invalid"> = {
   // whose renderers offer a Retry. "invalid" is the family whose reading is
   // "change the request", which is what the reader line asks for.
   CONTENT_BLOCKED: "invalid",
-  // guuey#2293: sending the same images again meets the same refusal.
-  ATTACHMENTS_UNSUPPORTED: "invalid",
+  // Sending the same parts again meets the same refusal.
+  PARTS_UNSUPPORTED: "invalid",
+  PARTS_INVALID: "invalid",
   ATTACHMENTS_INVALID: "invalid",
   // guuey#2549: the same turn without words meets the same refusal.
   INPUT_KIND_NOT_DECLARED: "invalid",

@@ -1645,6 +1645,21 @@ textarea.guuey-chat-a2ui-input {
   border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
   border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
 }
+/* A part that is not an image is drawn by its name, in the preview's frame. */
+.guuey-chat-attachment-file {
+  display: block;
+  box-sizing: border-box;
+  max-width: 160px;
+  height: 56px;
+  line-height: 54px;
+  padding: 0 12px;
+  overflow: hidden;
+  font-size: 0.875em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--guuey-chat-canvas-muted, var(--_guuey-chat-canvas-muted));
+  border-radius: var(--guuey-chat-radius, var(--_guuey-chat-radius));
+}
 .guuey-chat-attachment-remove {
   position: absolute;
   top: -8px;

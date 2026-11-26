@@ -80,21 +80,20 @@ export interface ChatStrings {
    */
   errorNoReply: string;
   /**
-   * R11, code ATTACHMENTS_UNSUPPORTED (guuey#2293): the agent's runtime did
-   * not acknowledge the turn's images, so the turn was stopped before any
-   * reply. Says what to do instead; a retry with the image would meet the
-   * same runtime.
+   * R11, code PARTS_UNSUPPORTED: the agent's runtime did not acknowledge every
+   * part of the turn (an image, a recording, a file), so the turn was stopped
+   * before any reply. Says what to do instead; a retry with the part would
+   * meet the same runtime.
    */
-  errorAttachmentsUnsupported: string;
+  errorPartsUnsupported: string;
   /**
-   * R11, code ATTACHMENTS_INVALID (guuey#2293): the send's images broke the
-   * V1 rules and nothing was sent. The kit's own composer judges each file
-   * first, so this reads on a host that called `send` itself. One code covers
-   * an image by link the runtime turned down too (a guest's link, or one it
-   * could not read), so the sentence says to attach the image: that works in
-   * every case, signed in or not.
+   * R11, codes PARTS_INVALID (the send's parts broke the rules, or this
+   * agent's runtime takes attached images only, and nothing was sent) and the
+   * runtime's own ATTACHMENTS_INVALID (an image it turned down, by link or
+   * inline). The kit's own composer judges each file first, so this reads
+   * mostly on a host that called `send` itself.
    */
-  errorAttachmentsInvalid: string;
+  errorPartsInvalid: string;
   /**
    * R11, code INPUT_KIND_NOT_DECLARED (guuey#2549): a turn without words
    * reached an agent that does not take one (it never did, or no longer
@@ -435,18 +434,20 @@ export interface ChatStrings {
   send: string;
   stop: string;
   /**
-   * guuey#2293 — the composer's image affordance (`<GuueyChat attachments>`):
-   * the attach button's accessible name, the preview row's label, each
-   * preview's Remove button, the status line naming a file the composer did
-   * not take, and the turn's input when images are sent with no words (the
-   * runtime needs a non-empty input; this line is what the model reads beside
-   * the images).
+   * The composer's attach affordance (`<GuueyChat parts>`): the attach
+   * button's accessible name (images only, or any other kind on), the preview
+   * row's label, each preview's Remove button, the status line naming a file
+   * the composer did not take, and the turn's words when parts are sent with
+   * none (every runtime needs words; this line is what the model reads beside
+   * them: images only, or anything else).
    */
   attachImage: string;
+  attachFile: string;
   attachmentsLabel: string;
   removeAttachment: (name: string) => string;
   attachmentRefused: (name: string, reason: "unsupported_type" | "too_large" | "too_many" | "unreadable") => string;
   attachmentsOnlyInput: string;
+  filesOnlyInput: string;
   /**
    * guuey#2446 — composer dictation (`<GuueyChat voice>`, and any host's own
    * composer over `useSpeechInput`): the mic button's accessible name, and
@@ -541,8 +542,8 @@ export const defaultChatStrings: ChatStrings = {
   errorWakeTimedOut: WAKE_TIMED_OUT_MESSAGE,
   errorSessionBusy: "The agent is still answering a message. Try again in a few seconds.",
   errorInvalid: "The app sent a request the agent couldn't read.",
-  errorAttachmentsUnsupported: "This agent can't read images yet. Send your message without the image.",
-  errorAttachmentsInvalid: "That image can't be sent. Attach a JPEG, PNG, GIF or WebP image, up to 4 at a time.",
+  errorPartsUnsupported: "This agent can't read this attachment yet. Send your message without it.",
+  errorPartsInvalid: "That attachment can't be sent. Try a smaller file, fewer at a time, or a JPEG, PNG, GIF or WebP image.",
   errorInputKindNotDeclared: "This agent does not accept a turn without text. Send your message with a few words.",
   errorInputKindNotAdvertised: "This agent can't take a turn without words right now. Send it with a few words.",
 
@@ -676,6 +677,7 @@ export const defaultChatStrings: ChatStrings = {
   send: "Send",
   stop: "Stop",
   attachImage: "Attach image",
+  attachFile: "Attach a file",
   attachmentsLabel: "Attached images",
   removeAttachment: (name) => `Remove ${name}`,
   attachmentRefused: (name, reason) => {
@@ -691,6 +693,7 @@ export const defaultChatStrings: ChatStrings = {
     }
   },
   attachmentsOnlyInput: "See the attached image.",
+  filesOnlyInput: "See the attached files.",
   voiceInput: "Voice input",
   voiceListening: "Listening…",
   voiceNoMatch: "Didn't catch that.",
