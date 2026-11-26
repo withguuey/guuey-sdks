@@ -172,6 +172,25 @@ optional, three-helper sugar layer over the same paths.
 
 The guuey community is on Discord — https://guuey.com/discord. Bugs in the scaffold or the SDKs: https://github.com/withguuey/guuey-sdks/issues.
 
+## Files, audio and documents people send
+
+Photos reach the model on every template. Every other attachment (audio, files, documents) is accepted.
+It reaches the model as its own content where the model takes that type. Otherwise it is saved in the
+conversation's storage, and the message tells the model where it is. When the model has no tool that
+opens that type, the message says so plainly, and the model tells the person it cannot open it. Nothing
+is refused or dropped in silence.
+
+- **openai-agents-sdk:** PDFs and text files go to the model natively. Other types are saved and named,
+  but this agent has no file tool, so the model says it cannot open them.
+- **claude-agent-sdk:** as scaffolded, this agent runs with no built-in tools (`tools: []` in
+  `src/worker.ts`), so attachments are saved and named, and the model says it cannot open them. To have
+  PDFs and text files open, give the agent the Read tool:
+  - set `tools: ["Read"]`, and the tool rules' `builtins: ["Read"]` to match;
+  - pass `fileTools: true` to `runClaudeTurn`, and set `parts: { target: "claude", fileTools: true }`.
+
+  Claude Code's Read tool does not open audio. Audio is saved and named, and a transcription tool (an MCP
+  server) is how the agent would hear it.
+
 ## How people talk to your agent
 
 - **guuey Portal** — a Telegram-like agent App Store and universal chat

@@ -149,9 +149,18 @@ await serveNative(
     // It also applies the agent's tool gates (the rules above), so every hello
     // says so with tool-gates.v1 (guuey#2670).
     capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
+    // runClaudeTurn's content places the app's session and turn context before the
+    // turn's own text, so each hello names the context its invoke carries.
+    context: true,
     // The turn's images reach the model (runClaudeTurn sends them as image blocks)
     // and are stored in the turn's session storage, so the hello says so.
     images: true,
+    // The message's other parts (audio, files, documents): Claude takes none
+    // natively, so each is saved in the conversation's storage and named in the
+    // turn's note. This agent runs with no file tool (`tools: []`), so the note
+    // tells the model it cannot open them and it tells the person. Give the agent
+    // Read (and `fileTools: true` here and in runClaudeTurn) to have PDF and text open.
+    parts: { target: "claude", fileTools: false },
     // The hello waits for runClaudeTurn's `emit.claudeSession`, so it can carry the session's block (guuey#3550).
     claudeSession: true,
   }

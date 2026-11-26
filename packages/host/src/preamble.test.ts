@@ -17,6 +17,7 @@ import {
   buildSystemPrompt,
   buildTurnContextBlocks,
   escapeTurnData,
+  TURN_DATA_TAG_NAMES,
   promptClassOf,
   type PromptClass,
   type TurnContextData,
@@ -885,6 +886,15 @@ describe("A1: the turn's context blocks", () => {
     expect(blocks[0]?.match(/<\/user_profile>/g)).toHaveLength(1);
     expect(blocks[1]?.match(/<\/turn_directive>/g)).toHaveLength(1);
     expect(blocks[1]?.match(/<\/welcome_card>/g)).toHaveLength(1);
+  });
+
+  it("@guuey/worker's context escaping covers every one of these turn tags, so app context can never forge a platform block", async () => {
+    const { CONTEXT_ESCAPED_TAG_NAMES, escapeContextData } = await import("@guuey/worker");
+    for (const name of TURN_DATA_TAG_NAMES) {
+      expect(CONTEXT_ESCAPED_TAG_NAMES).toContain(name);
+      expect(escapeContextData(`<${name}>`)).toBe(`&lt;${name}>`);
+    }
+    expect(TURN_DATA_TAG_NAMES).toHaveLength(9);
   });
 
   it("escapeTurnData neutralises the openers and closers of the nine turn tags, leaving other text alone", () => {

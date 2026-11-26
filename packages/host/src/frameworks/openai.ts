@@ -39,7 +39,7 @@ import {
   type AgentInputItem,
   type RunStreamEvent,
 } from "@openai/agents";
-import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, invokeImagesCapabilities, mcpToolCustomData, openaiTurnInput, storeTurnImages } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, contextCapabilities, invokeImagesCapabilities, mcpToolCustomData, invokePartStates, invokePartsCapabilities, openaiTurnInput, storeTurnImages, storeTurnParts } from "@guuey/worker";
 import { modelToolFilterFor, reportToolGateErrors, type ToolGates } from "../mcp-tool-gates.js";
 import type { Emitter, JsonValue } from "@guuey/worker";
 import {
@@ -128,16 +128,33 @@ export async function runInvokeOpenai(
   // `sdkVersion` is resolved at runtime, never hardcoded; `null` (SDK not
   // resolvable) is tolerated by the Router.
   // guuey#2293: an invoke carrying images announces that this run path hands them to the model.
-  emit.hello(OPENAI_FRAMEWORK, OPENAI_SDK_PACKAGE, resolveSdkVersion(OPENAI_SDK_PACKAGE), [
-    ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
-    ...invokeImagesCapabilities(invoke),
-  ]);
+  emit.hello(
+    OPENAI_FRAMEWORK,
+    OPENAI_SDK_PACKAGE,
+    resolveSdkVersion(OPENAI_SDK_PACKAGE),
+    [
+      ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+      ...invokeImagesCapabilities(invoke),
+      ...invokePartsCapabilities(invoke, "openai-responses"),
+      // The app's turn context reaches the model in openaiTurnInput's frame.
+      ...contextCapabilities({ turnContext: invoke.turnContext }),
+    ],
+    undefined,
+    // This path gives the model no file tool: a part it cannot take natively is a file it cannot open.
+    invokePartStates(invoke, "openai-responses", false),
+  );
   // guuey#2293: the turn's images are also stored in its session storage
   // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
   // turn does not run.
   const imagesFace = storeTurnImages(invoke);
   if (imagesFace !== undefined) {
     emit.error(imagesFace);
+    return;
+  }
+  // Design v7 D1: the parts this path's model API does not take natively are stored as files the note names.
+  const partsFace = storeTurnParts(invoke, "openai-responses");
+  if (partsFace !== undefined) {
+    emit.error(partsFace);
     return;
   }
 

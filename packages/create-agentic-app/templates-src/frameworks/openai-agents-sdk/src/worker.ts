@@ -116,8 +116,16 @@ await serveNative(
     // It also applies the agent's tool gates (each server's `toolFilter` above), so every hello
     // says so with tool-gates.v1 (guuey#2670).
     capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
+    // openaiTurnInput places the app's turn context before the turn's own text, so
+    // each hello names the context its invoke carries (never the session one: this
+    // worker folds history into its text and keeps no session).
+    context: true,
     // The turn's images reach the model (openaiTurnInput above) and are stored
     // in the turn's session storage, so the hello says so.
     images: true,
+    // The message's other parts: PDF and text go natively (input_file); any other
+    // part is saved in the conversation's storage and named in the turn's note,
+    // which tells the model (it has no file tool) that it cannot open it.
+    parts: { target: "openai-responses", fileTools: false },
   }
 );

@@ -755,8 +755,18 @@ export function buildSystemPrompt(agentPrompt: string, cls: SystemPromptClass): 
  * adjacent quantifiers share a whitespace run: a `<` followed by a long run of
  * whitespace scans it once, never quadratically.
  */
-const TURN_DATA_TAG =
-  /<(?=\s*(?:\/\s*)?(?:turn_context|turn_directive|conversation_history|thread_memory|working_state|user_memory|user_profile|first_impression_handshake|welcome_card)\b)/gi;
+export const TURN_DATA_TAG_NAMES = [
+  "turn_context",
+  "turn_directive",
+  "conversation_history",
+  "thread_memory",
+  "working_state",
+  "user_memory",
+  "user_profile",
+  "first_impression_handshake",
+  "welcome_card",
+] as const;
+const TURN_DATA_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${TURN_DATA_TAG_NAMES.join("|")})\\b)`, "gi");
 
 /**
  * Neutralise, in a data string about to be framed inside a turn block, every

@@ -28,7 +28,11 @@ import { runAdkTurn } from "./google-adk.js";
 import { TURN_CONTEXT_LEAD } from "../preamble.js";
 import {
   CONTEXT_ONLY_TURN_TEXT,
+  MESSAGE_CONTEXT_LEAD,
+  MESSAGE_FILE_UNREADABLE,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  PARTS_CAPABILITY,
+  TURN_CONTEXT_CAPABILITY,
   TURN_IMAGES_FACES,
   anthropicUserContent,
   attachmentFileName,
@@ -101,6 +105,47 @@ async function claudeTurn(over: Partial<HostInvoke>): Promise<{ sent: SDKUserMes
   await runInvoke({}, turn(over), { apiKey: "sk-test", listCredentials: () => [] }, createEmitter(sink), query);
   return { sent, events };
 }
+
+describe("Claude: the app's context and the person's parts reach the model in the platform's frames", () => {
+  it("the turn context frame sits after the platform's two blocks and before the own text; the hello names it", async () => {
+    const { sent, events } = await claudeTurn({ turnContext: [{ type: "text", text: "plan: pro" }] });
+    expect(sent?.message.content).toEqual([
+      { type: "text", text: EMPTY_TURN_CONTEXT },
+      { type: "text", text: EMPTY_TURN_DIRECTIVE },
+      { type: "text", text: `<message_context>\n${MESSAGE_CONTEXT_LEAD}\nplan: pro\n</message_context>` },
+      { type: "text", text: "Make flashcards from this page." },
+    ]);
+    expect(helloOf(events)).toMatchObject({ capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TURN_CONTEXT_CAPABILITY] });
+  });
+
+  it("a PDF part on an fsBound turn is stored and named as a file Read opens; the hello says file", async () => {
+    const data = Buffer.from("%PDF-1.7 host").toString("base64");
+    const { sent, events } = await claudeTurn({
+      fsBound: true,
+      parts: [{ type: "document", source: { type: "base64", mediaType: "application/pdf", data } }],
+    });
+    const content = sent?.message.content;
+    const texts = Array.isArray(content) ? content.flatMap((b) => (b.type === "text" ? [b.text] : [])) : [];
+    const note = texts.filter((t) => t.startsWith("<message_files>\n"));
+    expect(note).toHaveLength(1);
+    expect(note[0]).not.toContain(MESSAGE_FILE_UNREADABLE);
+    expect(helloOf(events)).toMatchObject({ capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, PARTS_CAPABILITY], parts: ["file"] });
+  });
+
+  it("the same part without file tools (not fsBound): still delivered, the note says it cannot be opened, the hello says file-unreadable", async () => {
+    const data = Buffer.from("%PDF-1.7 host2").toString("base64");
+    const { sent, events } = await claudeTurn({
+      parts: [{ type: "document", source: { type: "base64", mediaType: "application/pdf", data } }],
+    });
+    const content = sent?.message.content;
+    const texts = Array.isArray(content) ? content.flatMap((b) => (b.type === "text" ? [b.text] : [])) : [];
+    expect(texts.filter((t) => t.includes(MESSAGE_FILE_UNREADABLE))).toHaveLength(1);
+    expect(helloOf(events)).toMatchObject({
+      capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, PARTS_CAPABILITY],
+      parts: ["file-unreadable"],
+    });
+  });
+});
 
 describe("Claude: the images reach the model as image blocks before the text", () => {
   it("sends each image as a base64 image block, in order, then the text; the hello announces invoke.images.v1", async () => {

@@ -316,11 +316,12 @@ describe("OpenAI template worker: the model key (guuey#2139)", () => {
 });
 
 describe("OpenAI template worker: declares the input kinds its text path handles (guuey#2549)", () => {
-  it("its hello declares MODEL_TEXT_INPUT_KIND_CAPABILITIES and tool-gates.v1, from serveNative's info", async () => {
+  it("its hello declares MODEL_TEXT_INPUT_KIND_CAPABILITIES and tool-gates.v1, and hands its context per invoke (`context: true`), from serveNative's info", async () => {
     const { MODEL_TEXT_INPUT_KIND_CAPABILITIES, inputKindCapability } = await import("@guuey/worker");
     const { TOOL_GATES_CAPABILITY } = await import("@guuey/worker");
-    // The input kinds, then tool-gates.v1 (guuey#2670): nothing else.
+    // The input kinds, then tool-gates.v1 (guuey#2670): nothing else. The context capabilities ride each invoke's hello.
     expect(h.info?.capabilities).toEqual([...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY]);
     expect(h.info?.capabilities).toEqual([inputKindCapability("context-only"), "tool-gates.v1"]);
+    expect(h.info?.context).toBe(true);
   });
 });

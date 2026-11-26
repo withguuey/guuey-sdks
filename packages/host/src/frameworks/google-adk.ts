@@ -66,9 +66,13 @@ import {
   geminiUserParts,
   invokeImagesCapabilities,
   storeTurnImages,
+  storeTurnParts,
+  invokePartsCapabilities,
+  invokePartStates,
   type GeminiPart,
   listCredentials,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+  contextCapabilities,
   type CredentialFile,
   type Emitter,
   type JsonValue,
@@ -391,17 +395,34 @@ export async function runAdkTurn(
   sdkVersion: string | null,
 ): Promise<void> {
   // guuey#2293: an invoke carrying images also announces that this run hands them to the model.
-  emit.hello(ADK_FRAMEWORK, ADK_PACKAGE, sdkVersion, [
-    ADK_HOST_COMPLETION_CAPABILITY,
-    ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
-    ...invokeImagesCapabilities(turn),
-  ]);
+  emit.hello(
+    ADK_FRAMEWORK,
+    ADK_PACKAGE,
+    sdkVersion,
+    [
+      ADK_HOST_COMPLETION_CAPABILITY,
+      ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+      ...invokeImagesCapabilities(turn),
+      ...invokePartsCapabilities(turn, "gemini"),
+      // The app's turn context reaches the model in geminiUserParts' frame.
+      ...contextCapabilities({ turnContext: turn.turnContext }),
+    ],
+    undefined,
+    // This path gives the model no file tool: a part it cannot take natively is a file it cannot open.
+    invokePartStates(turn, "gemini", false),
+  );
   // guuey#2293: the turn's images are also stored in its session storage
   // (@guuey/worker storeTurnImages); a refusal is the person's face, and the
   // turn does not run.
   const imagesFace = storeTurnImages(turn);
   if (imagesFace !== undefined) {
     emit.error(imagesFace);
+    return;
+  }
+  // Design v7 D1: the parts this path's model API does not take natively are stored as files the note names.
+  const partsFace = storeTurnParts(turn, "gemini");
+  if (partsFace !== undefined) {
+    emit.error(partsFace);
     return;
   }
   try {

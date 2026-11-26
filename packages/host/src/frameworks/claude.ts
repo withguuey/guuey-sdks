@@ -29,7 +29,7 @@ import type { CredentialFile,
   InputKind,
   JsonValue,
   ProfileSection,
-  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment,
+  StopReason, McpAvailability, FirstImpressionPush, FirstImpressionShown, WithheldTool, InvokeImageAttachment, InvokePart, TurnContextBlock, InvokeSessionContext, PartState,
   AnthropicUserBlock, AppliedClaudeSession, HelloCliSession, InvokeCliSession } from "@guuey/worker";
 import {
   anthropicUserContent,
@@ -40,6 +40,9 @@ import {
   cliSessionIdProblem,
   invokeImagesCapabilities,
   storeTurnImages,
+  storeTurnParts,
+  invokePartsCapabilities,
+  invokePartStates,
 } from "@guuey/worker";
 import {
   buildOptions,
@@ -62,7 +65,7 @@ import {
   type PrewarmFn,
 } from "./claude-spare.js";
 import { resolveSdkVersion } from "../sdk-version.js";
-import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "@guuey/worker";
+import { MODEL_TEXT_INPUT_KIND_CAPABILITIES, contextCapabilities } from "@guuey/worker";
 import { reportToolGateErrors } from "../mcp-tool-gates.js";
 
 /** The framework THIS run path runs. OpenAI has its own path (`run-openai.ts`). */
@@ -142,6 +145,12 @@ export interface HostInvoke {
   attachments?: InvokeImageAttachment[];
   /** Thread resume (guuey#3407 B3): run the CLI session under the Router's id — see `Invoke.cliSession` in `@guuey/worker`. */
   cliSession?: InvokeCliSession;
+  /** The person's audio, file and document parts (design v7 D1): native, or a stored file named in the files note. */
+  parts?: InvokePart[];
+  /** Context the person's app attached to this message, framed as `<message_context>` before the own text. */
+  turnContext?: TurnContextBlock[];
+  /** The conversation's session context, on a delivery turn, framed as `<session_context>`. */
+  sessionContext?: InvokeSessionContext;
 }
 
 /** Per-process config the worker resolves once at boot. */
@@ -388,7 +397,23 @@ export async function runInvoke(
   // stored session). It is still the first event: every failure before it sends
   // a hello without the capability, then the error. Without `cliSession` the
   // hello goes first, exactly as before.
-  const hello = helloOnce(emit, [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, ...invokeImagesCapabilities(invoke)]);
+  // The app's turn context reaches the model in anthropicUserContent's frame (and the session context too, on a
+  // hello that carries the CLI session that keeps it: helloOnce adds that one).
+  // The parts reach the model when each is native or a file it can open: Claude's Read needs the file tools, armed
+  // only on an fsBound turn. The app's turn context rides anthropicUserContent's frame; the session context too, on a
+  // hello that carries the CLI session that keeps it (helloOnce adds that one, when this invoke delivers one).
+  const hello = helloOnce(
+    emit,
+    [
+      ...MODEL_TEXT_INPUT_KIND_CAPABILITIES,
+      ...invokeImagesCapabilities(invoke),
+      ...invokePartsCapabilities(invoke, "claude"),
+      ...contextCapabilities({ turnContext: invoke.turnContext }),
+    ],
+    contextCapabilities({ sessionContext: invoke.sessionContext }),
+    // Claude takes no part natively; a stored file opens with Read, armed only on an fsBound turn.
+    invokePartStates(invoke, "claude", invoke.fsBound === true),
+  );
   const session = invoke.cliSession;
   if (session === undefined) hello();
   // guuey#2293: the turn's images are also stored in its session storage
@@ -398,6 +423,13 @@ export async function runInvoke(
   if (imagesFace !== undefined) {
     hello();
     emit.error(imagesFace);
+    return;
+  }
+  // Design v7 D1: the parts this path's model API does not take natively are stored as files the note names.
+  const partsFace = storeTurnParts(invoke, "claude");
+  if (partsFace !== undefined) {
+    hello();
+    emit.error(partsFace);
     return;
   }
 
@@ -717,7 +749,7 @@ async function runClaudeTurn(
     // always both; the context block always opens with its constant lead line, the
     // directive may be empty) lead the message, each its own text
     // block, then the invoke's own content (its images, then its text) unchanged.
-    content = [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke)];
+    content = [...turnContext.map((text) => ({ type: "text" as const, text })), ...anthropicUserContent(invoke, undefined, { fileTools: invoke.fsBound === true })];
     if (session !== undefined) {
       // B3: @guuey/worker's one sequence (guuey#3550). It sends the hello with
       // the block (R-1: the only frame the Router takes these values from),
@@ -962,7 +994,12 @@ async function claimSpare(
 /** Sends the invoke's hello at most once (see `runInvoke`); a block adds the thread-resume capability. */
 type HelloOnce = (block?: HelloCliSession) => void;
 
-function helloOnce(emit: Emitter, capabilities: readonly string[]): HelloOnce {
+function helloOnce(
+  emit: Emitter,
+  capabilities: readonly string[],
+  withSession: readonly string[],
+  partStates: readonly PartState[] | undefined,
+): HelloOnce {
   let sent = false;
   return (block) => {
     if (sent) return;
@@ -971,8 +1008,9 @@ function helloOnce(emit: Emitter, capabilities: readonly string[]): HelloOnce {
       CLAUDE_FRAMEWORK,
       CLAUDE_SDK_PACKAGE,
       resolveSdkVersion(CLAUDE_SDK_PACKAGE),
-      block === undefined ? capabilities : [...capabilities, CLI_SESSION_CAPABILITY],
+      block === undefined ? capabilities : [...capabilities, CLI_SESSION_CAPABILITY, ...withSession],
       block,
+      partStates,
     );
   };
 }
