@@ -102,6 +102,11 @@ export interface ClaudeTurn<O extends ClaudeTurnOwnOptions> {
   readonly sessionRules?: { readonly allowedTools: readonly string[]; readonly disallowedTools: readonly string[] };
   /** How a START turn's text carries the thread. Default: {@link withHistory}. */
   readonly history?: (invoke: Invoke) => string;
+  /**
+   * Whether this agent's model can open a stored file this turn (it has a Read-class tool): it decides how the files
+   * note names each non-native part (design v7 D1). Must equal the worker's serveNative `parts.fileTools`. Default false.
+   */
+  readonly fileTools?: boolean;
 }
 
 /** How long the MCP servers may stay `pending` before the turn goes on without them. */
@@ -173,7 +178,9 @@ export async function runClaudeTurn<O extends ClaudeTurnOwnOptions>(turn: Claude
   }
   const resumes = invoke.cliSession?.mode === "resume";
   const history = turn.history ?? withHistory;
-  const content = anthropicUserContent(invoke, resumes ? modelInputOf(invoke) : history(invoke));
+  const content = anthropicUserContent(invoke, resumes ? modelInputOf(invoke) : history(invoke), {
+    fileTools: turn.fileTools === true,
+  });
   const session: WorkerClaudeSession | undefined = emit.claudeSession?.({
     systemPrompt: systemPrompt || undefined,
     header: sessionHeaderOf(options, turn.sessionRules),

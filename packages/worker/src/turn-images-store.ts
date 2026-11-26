@@ -149,6 +149,17 @@ function writeOnce(path: string, bytes: Buffer): void {
   }
 }
 
+/**
+ * Write one file of the turn into its session storage under `name` (relative, inside {@link TURN_IMAGES_DIR}), under
+ * this module's rules: `attachments` a real directory, the file written once under a temporary name (O_EXCL,
+ * O_NOFOLLOW, 0600) and renamed into place, an existing same-named file left as it is. The ONE writer for every file
+ * a turn stores (images here, and turn-parts.ts's parts). Throws {@link TurnImagesError}.
+ */
+export function writeTurnFile(sessionDir: string, name: string, bytes: Buffer): void {
+  ensureImagesDir(join(sessionDir, TURN_IMAGES_DIR));
+  writeOnce(join(sessionDir, name), bytes);
+}
+
 /** One image stored for the turn: its name relative to the session storage, and its size. */
 export interface StoredTurnImage {
   path: string;

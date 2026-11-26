@@ -4,7 +4,7 @@
  * fd-3 stream; tests pass an in-memory stream. Each event is written immediately
  * (one `write` per line) so streaming never stalls behind a buffer.
  */
-import type { DoneEvent, EndThread, HelloCliSession, JsonValue, StopReason, WorkerEvent } from "./protocol.js";
+import type { DoneEvent, EndThread, HelloCliSession, JsonValue, PartState, StopReason, WorkerEvent } from "./protocol.js";
 
 /** Minimal write interface accepted by {@link createEmitter}. `NodeJS.WritableStream` satisfies this. */
 export interface WriteSink {
@@ -27,6 +27,7 @@ export interface Emitter {
     sdkVersion: string | null,
     capabilities?: readonly string[],
     cliSession?: HelloCliSession,
+    parts?: readonly PartState[],
   ): void;
 }
 
@@ -43,7 +44,7 @@ export function createEmitter(out: WriteSink): Emitter {
     },
     error: (message) => write({ type: "error", message }),
     native: (framework, event) => write({ type: "native", framework, event }),
-    hello: (framework, sdkName, sdkVersion, capabilities, cliSession) =>
+    hello: (framework, sdkName, sdkVersion, capabilities, cliSession, parts) =>
       write({
         type: "hello",
         framework,
@@ -51,6 +52,7 @@ export function createEmitter(out: WriteSink): Emitter {
         sdkVersion,
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
         ...(cliSession !== undefined ? { cliSession } : {}),
+        ...(parts !== undefined && parts.length > 0 ? { parts } : {}),
       }),
   };
 }

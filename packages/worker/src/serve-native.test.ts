@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { PassThrough } from "node:stream";
 import { serveNativeOn, resolveInstalledVersion, type NativeServeInfo } from "./serve-native.js";
-import { HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY, inputKindCapability, type Invoke } from "./protocol.js";
+import {
+  HOST_SUSPEND_CAPABILITY,
+  SESSION_CONTEXT_CAPABILITY,
+  TOOL_GATES_CAPABILITY,
+  TURN_CONTEXT_CAPABILITY,
+  inputKindCapability,
+  type Invoke,
+} from "./protocol.js";
 import { MODEL_TEXT_INPUT_KIND_CAPABILITIES } from "./model-text.js";
 import { readEvent } from "./parse.js";
 import { drained } from "./fixtures/drained.js";
@@ -238,6 +245,18 @@ describe("serveNativeOn — declared capabilities", () => {
       type: "hello",
       capabilities: [HOST_SUSPEND_CAPABILITY, TOOL_GATES_CAPABILITY],
     });
+  });
+
+  it("session-context.v1 is dropped from a hello without a CLI session (nothing would keep the delivery)", async () => {
+    const declared = [TURN_CONTEXT_CAPABILITY, SESSION_CONTEXT_CAPABILITY];
+    expect(readEvent(await helloOf({ ...info, capabilities: declared }))).toEqual({
+      ...info,
+      type: "hello",
+      capabilities: [TURN_CONTEXT_CAPABILITY],
+    });
+    expect(await helloOf({ ...info, capabilities: [SESSION_CONTEXT_CAPABILITY] })).toBe(
+      '{"type":"hello","framework":"claude-agent-sdk","sdkName":"sdk","sdkVersion":"1.0.0"}',
+    );
   });
 
   it("a listed suspend capability is dropped unless the opt-in AND the offer put it there (never twice)", async () => {

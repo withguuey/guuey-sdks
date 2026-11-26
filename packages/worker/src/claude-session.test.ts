@@ -239,7 +239,7 @@ function invokeLine(cliSession?: InvokeCliSession, extra: Partial<Invoke> = {}):
   return JSON.stringify(invoke) + "\n";
 }
 
-async function serve(handler: NativeHandler, line: string, claudeSession = true) {
+async function serve(handler: NativeHandler, line: string, claudeSession = true, capabilities?: readonly string[]) {
   const input = new PassThrough();
   const output = new PassThrough();
   const done = serveNativeOn(
@@ -250,6 +250,7 @@ async function serve(handler: NativeHandler, line: string, claudeSession = true)
       sdkVersion: "1.0.0",
       suspend: true,
       ...(claudeSession ? { claudeSession: true as const } : {}),
+      ...(capabilities ? { capabilities } : {}),
     },
     { input, output },
   );
@@ -308,6 +309,23 @@ describe("serveNative claudeSession", () => {
     expect(events.map((e) => e.type)).toEqual(["hello", "native", "done"]);
     expect(events[0]).toMatchObject({ capabilities: [CLI_SESSION_CAPABILITY], cliSession: { hashVersion: CLI_SESSION_HASH_VERSION } });
     expect(answer?.block).toEqual(events[0]?.cliSession);
+  });
+
+  it("session-context.v1 rides a hello that carries the CLI session block, after the declared ones", async () => {
+    platformEnv();
+    const { SESSION_CONTEXT_CAPABILITY, TURN_CONTEXT_CAPABILITY } = await import("./protocol.js");
+    const events = await serve(
+      (_invoke, emit) => {
+        emit.claudeSession?.(sessionTurn);
+        emit.native({ type: "system", subtype: "init", session_id: ID });
+      },
+      invokeLine({ mode: "start", id: ID }),
+      true,
+      [TURN_CONTEXT_CAPABILITY, SESSION_CONTEXT_CAPABILITY],
+    );
+    expect(events[0]).toMatchObject({
+      capabilities: [TURN_CONTEXT_CAPABILITY, SESSION_CONTEXT_CAPABILITY, CLI_SESSION_CAPABILITY],
+    });
   });
 
   it("a resume's stored session is read under the config root and the cwd's real path", async () => {

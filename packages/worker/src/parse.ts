@@ -46,9 +46,11 @@ import type {
   HelloSdkStored,
   SdkSessionKind,
 } from "./protocol.js";
+import { checkSessionContext, checkTurnContext } from "./turn-context.js";
+import { parseInvokeParts } from "./turn-parts.js";
 import { parseClientCatalogs } from "./client-catalogs.js";
 import { endThreadProblem } from "./end-thread.js";
-import { isInputKind, SDK_SESSION_IDS_MAX, SDK_SESSION_PROMPT_SHAS_MAX } from "./protocol.js";
+import { isInputKind, PART_STATES, SDK_SESSION_IDS_MAX, SDK_SESSION_PROMPT_SHAS_MAX, type HelloPartState, type PartState } from "./protocol.js";
 import { isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 
 export function isInvoke(m: ControlMessage): m is Invoke {
@@ -452,6 +454,12 @@ function parseHelloSdkSession(v: JsonValue | undefined): HelloSdkSession | undef
   };
 }
 
+const isPartState = (state: string): state is PartState => (PART_STATES as readonly string[]).includes(state);
+function parseHelloParts(v: JsonValue | undefined): HelloPartState[] | undefined {
+  if (!Array.isArray(v) || !v.every(isString)) return undefined;
+  return v.map((state) => (isPartState(state) ? state : "unknown"));
+}
+
 export function parseControl(line: string): ControlMessage {
   let raw: JsonValue;
   try {
@@ -476,6 +484,12 @@ export function parseControl(line: string): ControlMessage {
       const resume = parseResume(raw.resume);
       const attachments = parseAttachments(raw.attachments);
       const cliSession = parseInvokeCliSession(raw.cliSession);
+      // The turn's and the session's context: each kept only when it passes the ONE check a Router sanitises with
+      // (turn-context.ts), otherwise absent, never thrown. A Router refuses a failing value by its named rule before
+      // it sends anything, so a failure here is a protocol fault, and reading it as absent keeps the turn the person typed.
+      const turnContext = raw.turnContext === undefined ? undefined : checkTurnContext(raw.turnContext);
+      const sessionContext = raw.sessionContext === undefined ? undefined : checkSessionContext(raw.sessionContext);
+      const parts = parseInvokeParts(raw.parts);
       return {
         type: "invoke",
         input: raw.input,
@@ -555,6 +569,12 @@ export function parseControl(line: string): ControlMessage {
         ...(attachments ? { attachments } : {}),
         // Thread resume (guuey#3407 B3): kept only when well formed, otherwise absent, which is today exactly.
         ...(cliSession ? { cliSession } : {}),
+        // Context the person's app attached to this message: text blocks only; omitted when none.
+        ...(turnContext?.ok && turnContext.value.length > 0 ? { turnContext: turnContext.value } : {}),
+        // The conversation's session context, on a delivery turn only.
+        ...(sessionContext?.ok ? { sessionContext: sessionContext.value } : {}),
+        // The message's audio, file and document parts: all well formed, or none (see parseInvokeParts).
+        ...(parts ? { parts } : {}),
       };
     }
     case "shutdown":
@@ -647,6 +667,10 @@ export function readEvent(line: string): ParsedEvent {
       const cliSession = parseHelloCliSession(raw.cliSession);
       // SDK thread resume (guuey#3517): the same rule for an SDK's own session store, parsed here and nowhere else.
       const session = parseHelloSdkSession(raw.session);
+      // Design v7 D1: the per-part states. An array of strings is kept, each unknown name read as "unknown" (never
+      // dropping the array, so a later worker's state is not read as "no ack"); anything else reads as absent. The
+      // length is checked against the invoke by the reader that holds it (the Router's gate).
+      const parts = parseHelloParts(raw.parts);
       return {
         type: "hello",
         framework: raw.framework,
@@ -655,6 +679,7 @@ export function readEvent(line: string): ParsedEvent {
         ...(capabilities !== undefined && capabilities.length > 0 ? { capabilities } : {}),
         ...(cliSession ? { cliSession } : {}),
         ...(session ? { session } : {}),
+        ...(parts ? { parts } : {}),
       };
     }
     case "suspend": {

@@ -36,6 +36,7 @@ export interface Fs {
 }
 // guuey#2877: the input-kind list lives in ONE file, published on its own browser-safe subpath
 // (`@guuey/worker/input-kinds`); the protocol re-exports it unchanged.
+import type { AgBlock, AgSource } from "@silverprotocol/core";
 import type { InputKind } from "./input-kinds.js";
 export { INPUT_KINDS, isInputKind, inputKindCapability, type InputKind } from "./input-kinds.js";
 
@@ -87,8 +88,9 @@ export type StopReason = "end_turn" | "max_turns" | "error";
 
 // ── Router → Worker: the control stream (fd 0) ──────────────────────────────
 
-/** Start a turn. Carries the pushed context (identity, fs, a recent history
- *  window — the full transcript is at `/session/.guuey/history.jsonl`).
+/** Start a turn. Carries the pushed context (identity, fs, and the thread's
+ *  recent history window; a resumed CLI session carries none, its saved session
+ *  holds the transcript).
  *
  *  `priorMemory`/`priorState` are the §1.4 push-by-value context the worker
  *  renders into its system-prompt preamble (thread memory + working state).
@@ -345,7 +347,98 @@ export interface Invoke {
    * Named apart from {@link resume}, which continues a paused run. An older host ignores it.
    */
   cliSession?: InvokeCliSession;
+  /**
+   * Context the person's app attached to THIS message (the client's `turnContext`), as content blocks: `text` blocks
+   * only in v1 ({@link TURN_CONTEXT_BLOCK_TYPES}). Its trust is the person's own typed message: it is their data,
+   * never the platform's and never an instruction. The Router sends it on every turn that carries it; a worker that
+   * hands it to its model announces {@link TURN_CONTEXT_CAPABILITY} in its hello, and an older worker ignores it.
+   * `anthropicUserContent` (and its OpenAI and Gemini twins) frames it as ONE `<message_context>` block just before
+   * the turn's own text ({@link frameTurnContext}), so it is hashed, sent and kept with that message.
+   */
+  turnContext?: TurnContextBlock[];
+  /**
+   * The conversation's session context, set by the app's own server for the whole thread, on the turns the Router
+   * delivers it: the first turn it is set, a turn after it changes, and a turn after it is withdrawn (`cleared`, no
+   * text). A resumed session already holds the last delivery, so a turn without the field keeps it. A worker that
+   * hands it to its model announces {@link SESSION_CONTEXT_CAPABILITY}; an older worker ignores it.
+   */
+  sessionContext?: InvokeSessionContext;
+  /**
+   * The person's message parts other than its text and images: audio, file and document, inline (the Router resolves
+   * a URL or a stored upload to bytes first), already judged by the Router. Images stay on {@link attachments}, so a
+   * worker that predates this field keeps its images. A worker built on `@guuey/worker`'s helpers delivers EVERY part
+   * (design v7 D1): the ones its framework takes natively as that framework's blocks, the rest as files in the turn's
+   * session storage named in ONE `<message_files>` note; it announces {@link PARTS_CAPABILITY} and the native kinds in
+   * its hello. An older worker ignores the field and announces nothing, and the Router answers that turn by name.
+   */
+  parts?: InvokePart[];
 }
+/** The kinds {@link Invoke.parts} carries: the silverprotocol AgBlock media kinds other than image. */
+export const INVOKE_PART_TYPES = ["audio", "file", "document"] as const;
+export type InvokePartType = (typeof INVOKE_PART_TYPES)[number];
+/** An inline AgSource: the only source a worker receives (the Router resolves the others). */
+export type InlineSource = Extract<AgSource, { type: "base64" }>;
+/** One of {@link Invoke.parts}: an AgBlock of an {@link InvokePartType}, its source inline. */
+export type InvokePart = Extract<AgBlock, { type: InvokePartType }> & { source: InlineSource };
+/** The most parts one invoke carries. */
+export const TURN_PARTS_MAX = 4;
+/**
+ * The largest part, in decoded bytes: the Router's shared inline room for a turn's media (6,000,000 base64
+ * characters), checked here again.
+ */
+export const TURN_PART_MAX_BYTES = 4_500_000;
+/**
+ * Capability (worker → Router, in the hello of an invoke that carried parts): this worker delivers every part, natively
+ * or as a file and note. Beside it, one {@link partCapability} per kind it took natively.
+ */
+export const PARTS_CAPABILITY = "invoke.parts.v1";
+/**
+ * How one part reached the model (design v7 D1, the platform lead's third ack state): `native` as the model API's own
+ * block; `file` stored and named in the files note, of a type the model can open with its file tool this turn;
+ * `file-unreadable` stored and named, the note telling the model it cannot open that type, so it tells the person.
+ */
+export const PART_STATES = ["native", "file", "file-unreadable"] as const;
+export type PartState = (typeof PART_STATES)[number];
+/** A {@link PartState} as a hello is READ: a state a later worker names that this release does not know is `unknown`. */
+export type HelloPartState = PartState | "unknown";
+/** The capability naming a part kind taken natively: `invoke.audio.v1`, `invoke.file.v1`, `invoke.document.v1`. */
+export function partCapability(kind: InvokePartType): string {
+  return `invoke.${kind}.v1`;
+}
+/**
+ * One block of {@link Invoke.turnContext}: `@silverprotocol/core`'s `AgBlock`, of the kinds in
+ * {@link TURN_CONTEXT_BLOCK_TYPES}. Imported as a TYPE only (`imports-type-only.test.ts`), so nothing of that package
+ * loads at runtime.
+ */
+export type TurnContextBlock = Extract<AgBlock, { type: (typeof TURN_CONTEXT_BLOCK_TYPES)[number] }>;
+/** The closed set of `AgBlock` kinds {@link Invoke.turnContext} carries in v1. Every other kind is refused. */
+export const TURN_CONTEXT_BLOCK_TYPES = ["text"] as const;
+/** The most UTF-8 bytes of text {@link Invoke.turnContext} carries in one invoke, over all its blocks. */
+export const TURN_CONTEXT_MAX_BYTES = 16 * 1024;
+/** The most UTF-8 bytes of {@link InvokeSessionContext.text} in one invoke. */
+export const SESSION_CONTEXT_MAX_BYTES = 64 * 1024;
+/** How a {@link InvokeSessionContext} reaches this turn. */
+export const SESSION_CONTEXT_DELIVERIES = ["full", "changed", "cleared"] as const;
+export type SessionContextDelivery = (typeof SESSION_CONTEXT_DELIVERIES)[number];
+/**
+ * {@link Invoke.sessionContext}: the text (empty on `cleared`), the sha256 of that text as 64 lowercase hex (the
+ * Router's compare key), and how it is delivered.
+ */
+export interface InvokeSessionContext {
+  text: string;
+  sha: string;
+  delivery: SessionContextDelivery;
+}
+/**
+ * Capability (worker → Router, in the hello of the invoke it applies to): this worker hands
+ * {@link Invoke.turnContext} to its model with the turn. Without it the Router counts the context as ignored.
+ */
+export const TURN_CONTEXT_CAPABILITY = "turn-context.v1";
+/**
+ * Capability (worker → Router, in the hello of the invoke it applies to): this worker hands
+ * {@link Invoke.sessionContext} to its model on a delivery turn.
+ */
+export const SESSION_CONTEXT_CAPABILITY = "session-context.v1";
 /** The image types an {@link InvokeImageAttachment} may carry. */
 export const INVOKE_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 /** One of {@link INVOKE_IMAGE_MIME_TYPES}. */
@@ -528,6 +621,12 @@ export interface WorkerHelloEvent {
    * the slot's own word: diagnostics and a cooperative check, never authority. An older Router ignores it.
    */
   readonly session?: HelloSdkSession;
+  /**
+   * Design v7 D1: each part's {@link PartState}, positional with {@link Invoke.parts}, sent only on an invoke that
+   * carried parts, beside {@link PARTS_CAPABILITY}. The truth per part: `invoke.parts.v1` never claims a part the model
+   * cannot open. An older Router ignores it; a state this release does not know reads as `unknown`.
+   */
+  readonly parts?: readonly HelloPartState[];
 }
 
 /**

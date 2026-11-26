@@ -16,6 +16,7 @@ import { isInvoke, isShutdown, parseControl } from "./parse.js";
 import {
   CLI_SESSION_CAPABILITY,
   HOST_SUSPEND_CAPABILITY,
+  SESSION_CONTEXT_CAPABILITY,
   type EndThread,
   type HelloCliSession,
   type Invoke,
@@ -31,6 +32,8 @@ import {
 import { endThreadProblem } from "./end-thread.js";
 import { invokeImagesCapabilities } from "./images.js";
 import { storeTurnImages } from "./turn-images-store.js";
+import { invokePartStates, invokePartsCapabilities, storeTurnParts, type PartsTarget } from "./turn-parts.js";
+import { contextCapabilities } from "./turn-context.js";
 import type { ServeOptions } from "./serve.js";
 import { createSuspendWriter, type SuspendWriteResult } from "./suspend-writer.js";
 
@@ -129,6 +132,21 @@ export interface NativeServeInfo {
    */
   images?: true;
   /**
+   * Design v7 D1: this worker delivers the invoke's parts ({@link Invoke.parts}: audio, file, document) for `target`'s
+   * model API, through the content helpers (`anthropicUserContent` = `claude`, `openaiTurnInput` = `openai-responses`
+   * or, with `chatCompletions`, `openai-chat-completions`, `geminiUserParts` = `gemini`); `fileTools` says whether its
+   * model can open a stored file this turn (a Read-class tool), and must equal what it passes the helper. On an invoke
+   * that carries parts, every non-native one is stored before the handler runs (a refusal is the person's face), and the
+   * hello announces `invoke.parts.v1`, the native kinds, and each part's state (`native`, `file`, `file-unreadable`).
+   */
+  parts?: { target: PartsTarget; fileTools: boolean };
+  /**
+   * This worker hands the invoke's turn context and session context to its model through the content helpers. Each
+   * invoke's hello then announces the context it carries ({@link contextCapabilities}); the session one only on a hello
+   * that carries a CLI session.
+   */
+  context?: true;
+  /**
    * guuey#3550: this Claude worker resumes the CLI session the Router names ({@link NativeEmit.claudeSession}). The
    * invoke's hello is then held until the turn calls `claudeSession` or first writes anything (native, text, suspend,
    * done, error), so it can carry the thread-resume block. Without this flag the hello goes first, exactly as before.
@@ -149,6 +167,17 @@ function helloCapabilities(suspendOffered: boolean, declared: readonly string[] 
   for (const name of declared ?? []) {
     if (name !== HOST_SUSPEND_CAPABILITY && !out.includes(name)) out.push(name);
   }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * A delivered session context is kept by the conversation's saved session, not resent: a turn without the field keeps
+ * the last delivery. So {@link SESSION_CONTEXT_CAPABILITY} rides only a hello that carries a CLI session block, and a
+ * hello without one (a stateless turn, or a worker that folds history into its text) drops it, so the Router delivers
+ * again instead of relying on a session that does not exist.
+ */
+function withoutSessionContext(capabilities: string[] | undefined): string[] | undefined {
+  const out = (capabilities ?? []).filter((name) => name !== SESSION_CONTEXT_CAPABILITY);
   return out.length > 0 ? out : undefined;
 }
 
@@ -212,7 +241,11 @@ export async function serveNativeOn(
     const capabilities = helloCapabilities(suspendWriter !== undefined, [
       ...(info.capabilities ?? []),
       ...(info.images === true ? invokeImagesCapabilities(msg) : []),
+      ...(info.parts !== undefined ? invokePartsCapabilities(msg, info.parts.target) : []),
+      ...(info.context === true ? contextCapabilities(msg) : []),
     ]);
+    // Design v7 D1: each part's state, the hello's per-part truth (only on an invoke that carried parts).
+    const partStates = info.parts !== undefined ? invokePartStates(msg, info.parts.target, info.parts.fileTools) : undefined;
     // The invoke's ONE hello. Every write to fd 3 below passes through it first, so it is always the first event;
     // with `claudeSession` it waits for the turn's block (guuey#3550), otherwise it goes now.
     let helloSent = false;
@@ -227,8 +260,9 @@ export async function serveNativeOn(
           : info.sdkName
             ? resolveInstalledVersion(info.sdkName)
             : null,
-        block === undefined ? capabilities : [...(capabilities ?? []), CLI_SESSION_CAPABILITY],
+        block === undefined ? withoutSessionContext(capabilities) : [...(capabilities ?? []), CLI_SESSION_CAPABILITY],
         block,
+        partStates,
       );
     };
     if (info.claudeSession !== true) hello();
@@ -237,6 +271,16 @@ export async function serveNativeOn(
     // person's face, and the turn does not run.
     if (info.images === true) {
       const face = storeTurnImages(msg);
+      if (face !== undefined) {
+        hello();
+        emitter.error(face);
+        continue;
+      }
+    }
+    // Design v7 D1: the parts this worker's model API does not take natively are stored as files before the turn
+    // runs; a refusal is the person's face, and the turn does not run.
+    if (info.parts !== undefined) {
+      const face = storeTurnParts(msg, info.parts.target);
       if (face !== undefined) {
         hello();
         emitter.error(face);
