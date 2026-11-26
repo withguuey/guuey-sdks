@@ -137,6 +137,8 @@ describe("transport module import closure", () => {
     // `types.ts` names its `ImageAttachmentCandidate` on `SendOptions`, and the module
     // imports nothing. `input-kinds.ts` joined for guuey#2549 the same way:
     // `types.ts` names its `InputKind` on `SendOptions`, and it imports nothing.
+    // `user-parts.ts` joined for request shape 2: `types.ts` names its `UserPartCandidate` on `SendOptions.parts`,
+    // and it imports only silverprotocol types and `attachments.ts`, already here.
     expect([...seen].sort()).toEqual([
       "attachments.ts",
       "error-codes.ts",
@@ -145,6 +147,7 @@ describe("transport module import closure", () => {
       "saturation-retry.ts",
       "transport.ts",
       "types.ts",
+      "user-parts.ts",
     ]);
   });
 });
