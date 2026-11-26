@@ -73,7 +73,59 @@ const compacted: Entry[] = [
   lastPrompt("turn three", "a5"),
 ];
 
+/**
+ * A start, then one RESUMED turn, in the shape measured on the pinned CLI (guuey#3971): the resume writes
+ * a `system`/`informational` entry whose parent is turn one's last entry, and the resumed turn's prompt is its child.
+ * Line for line the measured graph: 23 lines, one leaf.
+ */
+const informational = (uuid: string, parentUuid: string | null): Entry => ({
+  type: "system", subtype: "informational", uuid, parentUuid, content: "resumed", level: "info",
+});
+const resumed: Entry[] = [
+  { type: "queue-operation", operation: "enqueue" },
+  { type: "queue-operation", operation: "dequeue" },
+  prompt("u1", null, "turn one"),
+  attachment("a1", "u1", { systemPrompt: [SYS] }),
+  attachment("a2", "a1"),
+  attachment("a3", "a2"),
+  { type: "atis-latch" },
+  attachment("a4", "a3"),
+  attachment("a5", "a4"),
+  attachment("a6", "a5"),
+  assistant("r1", "a6", "reply one"),
+  attachment("a7", "r1"),
+  lastPrompt("turn one", "a7"),
+  { type: "cost-state" },
+  { type: "queue-operation", operation: "enqueue" },
+  { type: "queue-operation", operation: "dequeue" },
+  informational("i1", "a7"),
+  prompt("u2", "i1", "turn two"),
+  attachment("a8", "u2"),
+  assistant("r2", "a8", "reply two"),
+  lastPrompt("turn two", "r2"),
+  { type: "mode", mode: "default" },
+  { type: "cost-state" },
+];
+
 describe("measureStoredSession: a session the pinned CLI wrote", () => {
+  it("a resumed session (guuey#3971): the resumed turn chains through a system/informational entry; one walk, nothing unclassified", () => {
+    write(resumed);
+    const m = measureStoredSession(dir, ID);
+    expect(m.readError).toBeUndefined();
+    expect(m.walks).toEqual([
+      { fromLastPromptLeaf: true, promptShas: [promptSha("turn one"), promptSha("turn two")], compactSummaries: 0, boundary: "none" },
+    ]);
+    expect(m.lastPromptShas).toEqual([hashUserText("turn one"), hashUserText("turn two")]);
+    expect({ u: m.unclassified, c: m.corrupt, d: m.benignDuplicates, p: m.filePromptEntries, s: m.fileCompactSummaries }).toEqual({ u: 0, c: 0, d: 0, p: 2, s: 0 });
+  });
+
+  it("a system/informational entry is never a compaction boundary, even at a walk's root (guuey#3971)", () => {
+    write([prompt("u1", null, "turn one"), assistant("r1", "u1", "reply one"), informational("i1", null), prompt("u2", "i1", "turn two")]);
+    const m = measureStoredSession(dir, ID);
+    expect(m.walks.map((w) => w.boundary).sort()).toEqual(["none", "none"]);
+    expect(m.unclassified).toBe(0);
+  });
+
   it("one walk: every prompt in order, every stored system prompt and last prompt, nothing unclassified", () => {
     write(twoTurns);
     mkdirSync(join(dir, ID, "tool-results"), { recursive: true });

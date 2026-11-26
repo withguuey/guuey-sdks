@@ -8,7 +8,8 @@
  *
  * The file's shape is the pinned CLI's (2.1.282, measured by R7h and its compaction read). It is pinned here, beside the
  * parser, and re-measured at every CLI bump:
- * - {@link CLI_SESSION_LINE_TYPES} are the line types the CLI writes; `system` only as a `compact_boundary`;
+ * - {@link CLI_SESSION_LINE_TYPES} are the line types the CLI writes; `system` only as a `compact_boundary` or, on a
+ *   resume, an `informational` entry the resumed turn chains through (guuey#3971);
  * - a compaction re-writes the compacting turn's prompt entry and the attachment after it with the same uuid, adding
  *   only `slug` (a benign duplicate); roots the summary branch at a `compact_boundary` whose `logicalParentUuid` is the
  *   pre-compaction leaf; and writes that turn's `last-prompt` line a second time.
@@ -31,8 +32,14 @@ export const CLI_SESSION_LINE_TYPES: ReadonlySet<string> = new Set([
   "system",
 ]);
 
-/** The one `system` subtype the pinned CLI writes: the root of a compaction's summary branch. */
+/** The `system` subtype that roots a compaction's summary branch. */
 const COMPACT_BOUNDARY = "compact_boundary";
+/**
+ * The `system` subtype the pinned CLI writes when it resumes a session (guuey#3971, measured on 2.1.282): the resumed
+ * turn's first entry is its child, and its parent is the previous turn's last entry, so it is an ordinary link of the one
+ * chain. Neither a prompt nor a boundary. Every other `system` subtype stays unclassified: fail-closed until measured.
+ */
+const INFORMATIONAL = "informational";
 
 /** The one key a benign duplicate may add (the compaction's re-write). */
 const DUPLICATE_ADDED_KEY = "slug";
@@ -192,7 +199,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
     const line = parsed;
     // The session id the CLI wrote into this record, whatever its type: the file's own identity (cto D1).
     if (typeof line.sessionId === "string" && !sessionIds.includes(line.sessionId)) sessionIds.push(line.sessionId);
-    if (line.type === "system" && line.subtype !== COMPACT_BOUNDARY) {
+    if (line.type === "system" && line.subtype !== COMPACT_BOUNDARY && line.subtype !== INFORMATIONAL) {
       unclassified += 1;
       continue;
     }
@@ -230,7 +237,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
       } else {
         unclassified += 1;
       }
-    } else if (line.type === "system" && uuid !== null) {
+    } else if (line.type === "system" && line.subtype === COMPACT_BOUNDARY && uuid !== null) {
       boundaries.push(uuid);
     }
     if (uuid !== null) byUuid.set(uuid, { line, kind, sha });
@@ -269,7 +276,7 @@ export function measureStoredSession(sessionDir: string, id: string): HelloStore
   for (const { leaf, path } of paths) {
     const root = byUuid.get(path[0]);
     let boundary: HelloWalk["boundary"] = "none";
-    if (root !== undefined && root.line.type === "system") {
+    if (root !== undefined && root.line.type === "system" && root.line.subtype === COMPACT_BOUNDARY) {
       const target = root.line.logicalParentUuid;
       boundary = typeof target === "string" && target !== leaf && leaves.includes(target) ? "links-other-leaf" : "dangling";
     }
