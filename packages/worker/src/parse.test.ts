@@ -572,6 +572,31 @@ describe("readEvent — hello capabilities (additive-optional)", () => {
   });
 });
 
+describe("readEvent — hello parts, one state per invoke part (additive-optional)", () => {
+  const base = { type: "hello", framework: "claude-agent-sdk", sdkName: "@anthropic-ai/claude-agent-sdk", sdkVersion: "1.0.0" };
+  const hello = (extra: object) => JSON.stringify({ ...base, ...extra });
+
+  it("keeps an array of the known states, in order", () => {
+    expect(readEvent(hello({ parts: ["native", "file", "file-unreadable"] }))).toEqual({
+      ...base,
+      parts: ["native", "file", "file-unreadable"],
+    });
+  });
+
+  it("reads a state it does not know as \"unknown\" for that entry, never dropping the array", () => {
+    expect(readEvent(hello({ parts: ["file", "transcribed", "native"] }))).toEqual({
+      ...base,
+      parts: ["file", "unknown", "native"],
+    });
+  });
+
+  it("reads any other shape, or absence, as no parts: no key, never a throw", () => {
+    for (const extra of [{}, { parts: "file" }, { parts: ["file", 7] }, { parts: null }, { parts: { 0: "file" } }]) {
+      expect(readEvent(hello(extra))).toEqual(base);
+    }
+  });
+});
+
 describe("mcpAvailability (guuey#901) — each OAuth server's availability this turn", () => {
   const base = {
     type: "invoke",
