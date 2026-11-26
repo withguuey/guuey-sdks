@@ -135,6 +135,7 @@ export {
   IMAGE_ATTACHMENT_MAX_BASE64_CHARS,
   IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
   isImageAttachmentMimeType,
+  isStandardBase64,
   validateImageAttachments,
   describeImageAttachmentRefusal,
   type ImageAttachment,

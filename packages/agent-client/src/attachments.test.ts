@@ -10,6 +10,7 @@ import {
   IMAGE_ATTACHMENTS_MAX_COUNT,
   IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
   isImageAttachmentMimeType,
+  isStandardBase64,
   validateImageAttachments,
   type ImageAttachment,
 } from "./attachments.js";
@@ -144,5 +145,13 @@ describe("validateImageAttachments: an image by link (the link door's client hal
       refusal: { reason: "unsupported_type", index: 0, mimeType: "" },
     });
     expect(validateImageAttachments([{ kind: "inline", mimeType: "image/png" }])).toEqual({ ok: false, refusal: { reason: "not_base64", index: 0 } });
+  });
+});
+
+describe("isStandardBase64, the clients' one home for the check (guuey#2681)", () => {
+  it("is standard, padded base64 and nothing else", () => {
+    expect(isStandardBase64("aGk=")).toBe(true);
+    expect(isStandardBase64("aGVsbG8=")).toBe(true);
+    for (const bad of ["", "aGk", "aGk==x", "a=Gk", "aG k=", "aGk-", "aGk_"]) expect(isStandardBase64(bad), bad).toBe(false);
   });
 });

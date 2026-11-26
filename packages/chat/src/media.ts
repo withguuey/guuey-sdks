@@ -18,6 +18,7 @@
  * other scheme or source shape is an unloadable chip.
  */
 import type { AgSource } from "@silverprotocol/core";
+import { isStandardBase64 } from "@guuey/agent-client";
 
 /** Why a media row renders as a plain chip instead of loading. */
 export type MediaChipReason =
@@ -71,7 +72,6 @@ export const DEFAULT_MEDIA_ORIGINS: readonly string[] = [
 /** 5 MiB decoded — the default inline byte cap. */
 export const DEFAULT_MAX_INLINE_MEDIA_BYTES = 5 * 1024 * 1024;
 
-const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const MEDIA_TYPE = /^[a-z]+\/[a-z0-9.+-]+$/i;
 
 /** The decoded size of a base64 payload (no decode needed). */
@@ -116,7 +116,7 @@ function fromBytes(
   if (!MEDIA_TYPE.test(mediaType)) return { kind: "chip", reason: "unsupported" };
   const family = mediaType.slice(0, mediaType.indexOf("/")).toLowerCase();
   if (family !== kind || isSvg(mediaType)) return { kind: "chip", reason: "refused-type" };
-  if (!BASE64.test(data)) return { kind: "chip", reason: "unsupported" };
+  if (!isStandardBase64(data)) return { kind: "chip", reason: "unsupported" };
   if (base64DecodedBytes(data) > policy.maxInlineBytes) return { kind: "chip", reason: "oversized" };
   return kind === "image"
     ? { kind: "image", src: `data:${mediaType};base64,${data}` }

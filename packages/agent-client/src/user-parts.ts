@@ -19,7 +19,14 @@
  *  - a block type outside the four kinds is refused: the client builds only these.
  */
 import type { AgBlock } from "@silverprotocol/core";
-import { IMAGE_ATTACHMENT_MIME_TYPES, type TurnAttachment } from "./attachments.js";
+import {
+  IMAGE_ATTACHMENT_MAX_BASE64_CHARS,
+  IMAGE_ATTACHMENT_MIME_TYPES,
+  IMAGE_ATTACHMENTS_MAX_COUNT,
+  IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS,
+  isStandardBase64,
+  type TurnAttachment,
+} from "./attachments.js";
 
 /** The four user part kinds: the protocol's own block types. */
 export const USER_PART_KINDS = ["image", "audio", "file", "document"] as const;
@@ -53,17 +60,17 @@ export const MEDIA_INBOUND_MAX_PARTS_PER_TURN = 16;
 /** At most this many uploaded objects (`source: file`) in one turn. */
 export const MEDIA_INBOUND_MAX_STORAGE_REFS_PER_TURN = 5;
 
-/** At most this many images in one turn. */
-export const MEDIA_INBOUND_MAX_IMAGES_PER_TURN = 4;
+/** At most this many images in one turn: shape 1's image cap, one number (guuey#2681). */
+export const MEDIA_INBOUND_MAX_IMAGES_PER_TURN = IMAGE_ATTACHMENTS_MAX_COUNT;
 
 /** At most this many audio parts in one turn (counted inside the turn's parts). */
 export const MEDIA_INBOUND_MAX_AUDIO_PARTS_PER_TURN = 1;
 
-/** One inline part's base64 text is at most this many characters. */
-export const MEDIA_INBOUND_PART_MAX_BASE64_CHARS = 5_000_000;
+/** One inline part's base64 text is at most this many characters: the image cap, one number. */
+export const MEDIA_INBOUND_PART_MAX_BASE64_CHARS = IMAGE_ATTACHMENT_MAX_BASE64_CHARS;
 
-/** One turn's inline parts together are at most this many base64 characters. */
-export const MEDIA_INBOUND_TURN_MAX_BASE64_CHARS = 6_000_000;
+/** One turn's inline parts together are at most this many base64 characters: the shared room, one number. */
+export const MEDIA_INBOUND_TURN_MAX_BASE64_CHARS = IMAGE_ATTACHMENTS_MAX_TOTAL_BASE64_CHARS;
 
 
 /** A part's link is at most this many characters. */
@@ -116,8 +123,6 @@ export type UserPartRefusal =
 export type UserPartsVerdict = { ok: true; parts: UserPart[] } | { ok: false; refusal: UserPartRefusal };
 
 /** Standard base64: the 64-letter alphabet, padded to a multiple of 4, nothing else. */
-const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
-
 /** Whether `type` is one of {@link USER_PART_KINDS}. */
 export function isUserPartKind(type: string): type is UserPartKind {
   return (USER_PART_KINDS as readonly string[]).includes(type);
@@ -177,9 +182,7 @@ export function validateUserParts(list: readonly UserPartCandidate[], context: U
     if (data.length > MEDIA_INBOUND_PART_MAX_BASE64_CHARS) {
       return { ok: false, refusal: { reason: "too_large", index, max: MEDIA_INBOUND_PART_MAX_BASE64_CHARS } };
     }
-    if (data.length === 0 || data.length % 4 !== 0 || !BASE64.test(data)) {
-      return { ok: false, refusal: { reason: "not_base64", index } };
-    }
+    if (!isStandardBase64(data)) return { ok: false, refusal: { reason: "not_base64", index } };
     total += data.length;
     parts.push(partOf(type, { type: "base64", mediaType, data }, candidate));
   }

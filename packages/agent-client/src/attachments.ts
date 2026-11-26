@@ -103,8 +103,17 @@ export function isImageAttachmentMimeType(mimeType: string): mimeType is ImageAt
   return (IMAGE_ATTACHMENT_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
-/** Standard base64: the 64-letter alphabet, padded to a multiple of 4, nothing else. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * Standard base64: non-empty, the 64-letter alphabet, padded to a multiple of 4, nothing else. The clients' ONE home
+ * for this check (guuey#2681): the image judge here, the part judge (`user-parts.ts`) and `@guuey/chat`'s media plan all
+ * read it. `@guuey/worker` keeps its own copy (a server package cannot depend on this client); the runtime's
+ * `invoke-request-images.test.ts` and `attachments.test.ts` hold the two spellings equal.
+ */
+export function isStandardBase64(data: string): boolean {
+  return data.length > 0 && data.length % 4 === 0 && BASE64.test(data);
+}
 
 /**
  * Judge a turn's images against the V1 rules, all or nothing: either every
@@ -132,9 +141,7 @@ export function validateImageAttachments(list: readonly ImageAttachmentCandidate
     if (data.length > IMAGE_ATTACHMENT_MAX_BASE64_CHARS) {
       return { ok: false, refusal: { reason: "too_large", index, max: IMAGE_ATTACHMENT_MAX_BASE64_CHARS } };
     }
-    if (data.length === 0 || data.length % 4 !== 0 || !BASE64.test(data)) {
-      return { ok: false, refusal: { reason: "not_base64", index } };
-    }
+    if (!isStandardBase64(data)) return { ok: false, refusal: { reason: "not_base64", index } };
     total += data.length;
     attachments.push({ kind: "inline", mimeType, data });
   }

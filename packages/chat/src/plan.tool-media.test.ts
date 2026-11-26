@@ -209,6 +209,12 @@ describe("R7 loads only data:, blob: and the guuey media origin (guuey#2369)", (
     });
   });
 
+  it("inline bytes that are not standard base64 (unpadded, a stray character) render as an unsupported chip (guuey#2681)", () => {
+    for (const data of ["aGk", "aG k="]) {
+      expect(image({ type: "base64", mediaType: "image/png", data }).display, data).toEqual({ kind: "chip", reason: "unsupported" });
+    }
+  });
+
   it("blob: and data:image URLs load; http: and other schemes do not", () => {
     expect(image({ type: "url", url: "blob:https://app.example/1234" }).display).toEqual({
       kind: "image",
