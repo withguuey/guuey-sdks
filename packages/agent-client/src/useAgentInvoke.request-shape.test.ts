@@ -7,6 +7,7 @@
  * Retry goes in its own shape; only the W1 fallback moves a turn, to shape 1.
  */
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
@@ -184,7 +185,8 @@ describe("useAgentInvoke — W1, the one fallback", () => {
 async function refusalFace(
   file: "shape2-refusal.runtime.json" | "shape2-refusal.dev-server.json" | "shape2-refusal.runtime-other-input.twin.json",
 ): Promise<AgentResponseError> {
-  const raw: unknown = JSON.parse(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), "utf8"));
+  // Under jsdom `import.meta.url` is an http URL, so the file is found from the package root, where vitest runs.
+  const raw: unknown = JSON.parse(readFileSync(join(process.cwd(), "src", "fixtures", file), "utf8"));
   if (typeof raw !== "object" || raw === null) throw new Error(`${file}: not an object`);
   const status: unknown = Reflect.get(raw, "status");
   const headers: unknown = Reflect.get(raw, "headers");

@@ -125,7 +125,6 @@ export {
   isRequestShapeRefusal,
   type InvokeBodyV2,
   type InvokeBodyV2Input,
-  type TurnContextBlock,
 } from "./invoke-body-v2.js";
 // guuey#2293: the image attachments of request shape 1 — the V1 allowlist, its
 // caps and its judge, for a host that checks an image pick before sending
@@ -213,5 +212,6 @@ export type {
   UseAgentInvokeOptions,
   PageContext,
   SendOptions,
+  TurnContextBlock,
   UseAgentInvokeReturn,
 } from "./types.js";

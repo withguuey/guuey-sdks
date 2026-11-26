@@ -13,10 +13,15 @@
  * `MessageStorageAdapter` injection pattern.
  */
 
-import type { AgClientCapabilities, AgMessage, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
-import type { TurnContextBlock } from "./invoke-body-v2.js";
+import type { AgBlock, AgClientCapabilities, AgMessage, AgNoticeSource, AgReduceResult, JsonValue } from "@silverprotocol/core";
 import type { UserPartCandidate, UserPartKind } from "./user-parts.js";
 import type { InputKind } from "./input-kinds.js";
+
+/**
+ * A turn-context block: text only in v1 (the runtime refuses any other kind). Defined here, in the transport's import
+ * closure, so that closure never reaches `invoke-body-v2` (which reads `@guuey/mcp-apps-host`'s TapLabels).
+ */
+export type TurnContextBlock = Extract<AgBlock, { type: "text" }>;
 
 /** A flat chat turn as rendered by the consumer UI. */
 export interface AgentMessage {

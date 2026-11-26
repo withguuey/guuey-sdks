@@ -145,7 +145,12 @@ describe("useAgentInvoke — AgJSON client capabilities on the invoke body (guue
     await act(async () => {
       await a.result.current.send("hi");
     });
-    expect(withBlocks[0]).toMatchObject({ input: "hi", capabilities: DEFAULT_BLOCK_PRESERVING_CAPABILITIES });
+    // Shape 2 (the hook's first body): the words are the user message's text block; capabilities stay top-level.
+    expect(withBlocks[0]).toMatchObject({
+      kind: "start",
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      capabilities: DEFAULT_BLOCK_PRESERVING_CAPABILITIES,
+    });
     expect(DEFAULT_BLOCK_PRESERVING_CAPABILITIES).toEqual({ hitl: { ask: true, grantModes: true } });
     a.unmount();
 

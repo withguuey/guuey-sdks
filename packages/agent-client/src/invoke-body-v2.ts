@@ -14,14 +14,11 @@
  */
 import { AGJSON_VERSION, type AgBlock, type AgClientCapabilities, type AgInput, type JsonValue } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
-import type { PageContext } from "./types.js";
+import type { PageContext, TurnContextBlock } from "./types.js";
 import type { InputKind } from "./input-kinds.js";
 import type { UserPart } from "./user-parts.js";
 import { AgentResponseError } from "./errors.js";
 import { AGENT_ERROR_CODES } from "./error-codes.js";
-
-/** A turn-context block: text only in v1 (the runtime refuses any other kind). */
-export type TurnContextBlock = Extract<AgBlock, { type: "text" }>;
 
 export interface InvokeBodyV2Input {
   /** The user's words for this turn; `""` only beside {@link inputKind}. */

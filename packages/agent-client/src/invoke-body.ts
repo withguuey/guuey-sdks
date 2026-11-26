@@ -27,10 +27,9 @@
  */
 import type { AgClientCapabilities } from "@silverprotocol/core";
 import type { TapLabels } from "@guuey/mcp-apps-host/narrowing";
-import type { PageContext } from "./types.js";
+import type { PageContext, TurnContextBlock } from "./types.js";
 import type { TurnAttachment } from "./attachments.js";
 import type { InputKind } from "./input-kinds.js";
-import type { TurnContextBlock } from "./invoke-body-v2.js";
 
 export interface InvokeBodyInput {
   /**
