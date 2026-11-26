@@ -5,7 +5,9 @@
  * ggui generative-UI protocol that `@ggui-ai/mcp-apps-react`'s useInvoke targets):
  *
  *   POST {endpointUrl}/agent/invoke
- *     body: the one shape `buildInvokeBody` builds (`./invoke-body`)
+ *     body: request shape 2, the `AgInput` `buildInvokeBodyV2` builds
+ *           (`./invoke-body-v2`), or shape 1, `buildInvokeBody`'s
+ *           (`./invoke-body`), after an older runtime refused shape 2
  *   ← SSE:
  *     event: session  { sessionId, userId, threadId? }
  *     event: message  <SDKMessage JSON>          (assistant turns + result)
@@ -24,14 +26,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Reducer, type AgClientCapabilities, type AgReduceResult } from "@silverprotocol/core";
 import { A2UI_GUUEY_CATALOG_ID, JSON_RENDER_CATALOG_ID } from "./catalogs.js";
-import { invokeTurn, toInvokeUrl } from "./invoke-turn.js";
-import { buildInvokeBody } from "./invoke-body.js";
+import { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
+import { buildInvokeBody, type InvokeBody } from "./invoke-body.js";
+import { buildInvokeBodyV2, isRequestShapeRefusal, type InvokeBodyV2 } from "./invoke-body-v2.js";
 import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
 import { HistoryUnauthorizedError } from "./history.js";
 import { writeTapLabels } from "@guuey/mcp-apps-host/narrowing";
-import { describeImageAttachmentRefusal, validateImageAttachments } from "./attachments.js";
+import type { TurnAttachment } from "./attachments.js";
+import {
+  describeUserPartRefusal,
+  shape1FormOf,
+  USER_PART_KINDS,
+  validateUserParts,
+  type UserPart,
+  type UserPartKind,
+  type UserPartRefusal,
+} from "./user-parts.js";
 import { type InputKind, isInputKindRefusal } from "./input-kinds.js";
 import type {
   AgentInvokeAdapters,
@@ -48,6 +60,18 @@ import type {
   UseAgentInvokeOptions,
   UseAgentInvokeReturn,
 } from "./types.js";
+
+/**
+ * The two invoke body shapes: `2` is the silverprotocol `AgInput` body
+ * (`buildInvokeBodyV2`), `1` the guuey body every released runtime parses
+ * (`buildInvokeBody`, permanent).
+ */
+type RequestShape = 1 | 2;
+
+/** Whether two kind lists hold the same kinds in the same order (a hint setter keeps its identity across equal offers). */
+function sameKinds<T extends string>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((k, i) => k === b[i]);
+}
 
 function threadStorageKey(appId: string | undefined): string {
   return `guuey:thread:${appId ?? "default"}`;
@@ -467,9 +491,26 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     // Keep the array identity while the offer is unchanged, so a host effect
     // keyed on it runs only when the offer moves.
     setAcceptedInputKindsState((prev) =>
-      prev !== null && next !== null && prev.length === next.length && prev.every((k, i) => k === next[i]) ? prev : next,
+      prev !== null && next !== null && sameKinds(prev, next) ? prev : next,
     );
   }, []);
+  // The user part kinds the latest session frame listed (null before any
+  // admitted turn of this app). A hint for a host's pickers only: it never
+  // gates a send (the runtime's per-turn acknowledgement is its word).
+  const [acceptedPartKinds, setAcceptedPartKindsState] = useState<readonly UserPartKind[] | null>(null);
+  const setAcceptedPartKinds = useCallback((next: readonly UserPartKind[] | null): void => {
+    setAcceptedPartKindsState((prev) => (prev !== null && next !== null && sameKinds(prev, next) ? prev : next));
+  }, []);
+  // The request shape (W1/W2). Every hook instance writes shape 2 from its
+  // first turn; an older runtime that cannot parse it refuses it before the
+  // stream, and from then on this instance writes shape 1 for every NEW turn.
+  // In memory only, never stored: a reload, or another agent, tries shape 2
+  // again, and the fallback costs one refused request.
+  const downgradedRef = useRef(false);
+  // The shape each turn was first sent in, by its clientMessageId: a Retry
+  // goes in the shape its turn went in, whatever the instance writes now.
+  // Only the W1 fallback moves a turn, to shape 1.
+  const turnShapesRef = useRef(new Map<string, RequestShape>());
 
   const abortRef = useRef<AbortController | null>(null);
   // Mirror the latest threadId + adapters into refs so `send` reads fresh
@@ -528,8 +569,12 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setAborted(false);
     setAdopted(false);
     setSendStates({});
-    // Another app is another agent: its offer is unknown until its first turn.
+    // Another app is another agent: its offer is unknown until its first turn,
+    // and its runtime is tried at shape 2 again.
     setAcceptedInputKinds(null);
+    setAcceptedPartKinds(null);
+    downgradedRef.current = false;
+    turnShapesRef.current.clear();
 
     let cancelled = false;
     const key = threadStorageKey(appId);
@@ -640,7 +685,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     return () => {
       cancelled = true;
     };
-  }, [appId, setThreadClosed, setAcceptedInputKinds]);
+  }, [appId, setThreadClosed, setAcceptedInputKinds, setAcceptedPartKinds]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -673,6 +718,9 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setAborted(false);
     setAdopted(false);
     setSendStates({});
+    // The ledger's turns are gone, so are their shapes; the downgrade stays
+    // (it is the same agent's runtime).
+    turnShapesRef.current.clear();
   }, [appId, setThreadClosed]);
 
   const clearProfileLinkRequest = useCallback(() => {
@@ -720,17 +768,46 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         markRefused();
         return;
       }
-      // guuey#2293: the turn's images are judged HERE, the one send path,
-      // before the optimistic row: a list the V1 rules refuse is never sent,
-      // and the reason is the turn's error.
-      const attachmentsVerdict = validateImageAttachments(sendOpts?.attachments ?? []);
-      if (!attachmentsVerdict.ok) {
-        setError(describeImageAttachmentRefusal(attachmentsVerdict.refusal));
-        setErrorCode(CLIENT_ERROR_CODES.ATTACHMENTS_INVALID);
+      /** A list the rules refuse is never sent: the reason is the turn's error, and nothing is pushed. */
+      const refuseParts = (refusal: UserPartRefusal): void => {
+        setError(describeUserPartRefusal(refusal));
+        setErrorCode(CLIENT_ERROR_CODES.PARTS_INVALID);
         markRefused();
+      };
+      // W2: the turn's shape is fixed at its first send. A send under an id
+      // that already went (the host's own id), or a Retry of one
+      // (`replaces`), goes in that turn's shape; a new turn in the shape this
+      // instance writes now.
+      const hostId = sendOpts?.clientMessageId !== undefined && sendOpts.clientMessageId !== "" ? sendOpts.clientMessageId : undefined;
+      const replaced = sendOpts?.replaces;
+      const recordedShape =
+        (hostId !== undefined ? turnShapesRef.current.get(hostId) : undefined) ??
+        (replaced !== undefined ? turnShapesRef.current.get(replaced) : undefined);
+      const shape: RequestShape = recordedShape ?? (downgradedRef.current ? 1 : 2);
+      // The turn's parts are judged HERE, the one send path, before the
+      // optimistic row, on size and shape only: which kinds the agent takes is
+      // its runtime's word (the session frame's acknowledgement below). An
+      // uploaded object rides only a thread that exists, and a send after the
+      // agent ended the conversation starts a new one.
+      const partsVerdict = validateUserParts(sendOpts?.parts ?? [], {
+        hasThread: Boolean(threadIdRef.current) && threadClosedRef.current === null,
+      });
+      if (!partsVerdict.ok) {
+        refuseParts(partsVerdict.refusal);
         return;
       }
-      const attachments = attachmentsVerdict.attachments;
+      const parts: readonly UserPart[] = partsVerdict.parts;
+      // Shape 1 carries attached images only, so a turn that goes as shape 1
+      // with any other part is refused rather than sent without it.
+      let attachments: readonly TurnAttachment[] = [];
+      if (shape === 1) {
+        const form = shape1FormOf(parts);
+        if (!form.ok) {
+          refuseParts(form.refusal);
+          return;
+        }
+        attachments = form.attachments;
+      }
       setError(null);
       setErrorCode(null);
       setAborted(false);
@@ -761,6 +838,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         });
       };
       markSend("sending");
+      turnShapesRef.current.set(clientMessageId, shape);
       let admitted = false;
       // guuey#1333: stamp how many agent turns had arrived before this row.
       // Read from the reducer rather than counting our own appends — the
@@ -782,7 +860,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       // with its ledger entry, so the turn is drawn once, not beside its old
       // "Couldn't send" row. A row that is not marked failed reached the
       // agent and stays.
-      const replaced = sendOpts?.replaces;
       const replacing =
         replaced !== undefined && replaced !== clientMessageId && sendStatesRef.current[replaced] === "failed";
       if (replacing) {
@@ -1054,83 +1131,143 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         const capabilities =
           capabilitiesRef.current ??
           (preserveBlocksRef.current ? DEFAULT_BLOCK_PRESERVING_CAPABILITIES : undefined);
-        // The one wire shape, built by the pure builder so it has a name, a
-        // test and a fixture (guuey#1213 — the rolling-release rule). The
-        // live refs are read HERE, at send time: an SPA route change or a
-        // mode change rides the NEXT turn, never a stale memo.
-        const body = buildInvokeBody({
-          input: turnInput,
-          threadId: threadIdRef.current,
-          clientMessageId,
-          ...(capabilities !== undefined ? { capabilities } : {}),
-          ...(pageContextRef.current !== undefined ? { pageContext: pageContextRef.current } : {}),
-          ...(modeRef.current !== undefined ? { mode: modeRef.current } : {}),
-          ...(tapLabels !== undefined ? { tapLabels } : {}),
-          ...(attachments.length > 0 ? { attachments } : {}),
-          ...(inputKind !== undefined ? { inputKind } : {}),
-        });
+        // The wire shapes, built by the pure builders so each has a name, a
+        // test and a fixture (guuey#1213 — the rolling-release rule; W6 for
+        // shape 2). The live refs are read HERE, at send time: an SPA route
+        // change or a mode change rides the NEXT turn, never a stale memo.
+        const turnContext = sendOpts?.turnContext;
+        const pageContext = pageContextRef.current;
+        const mode = modeRef.current;
+        const bodyFor = (bodyShape: RequestShape): InvokeBody | InvokeBodyV2 =>
+          bodyShape === 2
+            ? buildInvokeBodyV2({
+                text: turnInput,
+                threadId: threadIdRef.current,
+                clientMessageId,
+                ...(parts.length > 0 ? { parts } : {}),
+                ...(turnContext !== undefined ? { turnContext } : {}),
+                ...(capabilities !== undefined ? { capabilities } : {}),
+                ...(pageContext !== undefined ? { pageContext } : {}),
+                ...(mode !== undefined ? { mode } : {}),
+                ...(tapLabels !== undefined ? { tapLabels } : {}),
+                ...(inputKind !== undefined ? { inputKind } : {}),
+              })
+            : buildInvokeBody({
+                input: turnInput,
+                threadId: threadIdRef.current,
+                clientMessageId,
+                ...(capabilities !== undefined ? { capabilities } : {}),
+                ...(pageContext !== undefined ? { pageContext } : {}),
+                ...(mode !== undefined ? { mode } : {}),
+                ...(tapLabels !== undefined ? { tapLabels } : {}),
+                ...(attachments.length > 0 ? { attachments } : {}),
+                ...(inputKind !== undefined ? { inputKind } : {}),
+                ...(turnContext !== undefined ? { turnContext } : {}),
+              });
+        // The shape this turn's body actually went in: the W1 fallback moves it to 1.
+        let sentShape: RequestShape = shape;
+
+        /**
+         * The ack gate: a runtime that predates a part kind parses it and
+         * ignores it, and would answer the words alone. Shape 1 keeps the
+         * image rule (every image acknowledged in `accepts.attachments`);
+         * shape 2 needs `accepts.parts[kind]` to equal the count sent, for
+         * every kind sent. Without it the turn is cut before any reply.
+         */
+        const partsAcknowledged = (ev: Extract<InvokeTurnEvent, { kind: "session" }>): boolean => {
+          if (sentShape === 1) return attachments.length === 0 || ev.attachmentsAccepted === attachments.length;
+          return USER_PART_KINDS.every((kind) => {
+            const sent = parts.filter((part) => part.type === kind).length;
+            return sent === 0 || ev.partsAccepted?.[kind] === sent;
+          });
+        };
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
         // its docblock owns the switch semantics); this hook only maps each
         // semantic event onto React state.
-        for await (const ev of invokeTurn(
-          { url: invokeUrl, body, signal: controller.signal },
-          transport,
-        )) {
-          if (ev.kind === "session") {
-            // The pod is awake and the turn is admitted — 'connecting' ends
-            // here, and so does the R0 "sending" state (absent = sent).
-            admitted = true;
-            markSend(null);
-            setStatus("thinking");
-            setAcceptedInputKinds(ev.acceptedInputKinds);
-            if (ev.threadId) {
-              threadIdRef.current = ev.threadId;
-              setThreadId(ev.threadId);
-              void adapters.storage.save(threadStorageKey(appId), ev.threadId);
+        const streamTurn = async (body: InvokeBody | InvokeBodyV2): Promise<void> => {
+          for await (const ev of invokeTurn({ url: invokeUrl, body, signal: controller.signal }, transport)) {
+            if (ev.kind === "session") {
+              // The pod is awake and the turn is admitted — 'connecting' ends
+              // here, and so does the R0 "sending" state (absent = sent).
+              admitted = true;
+              markSend(null);
+              setStatus("thinking");
+              setAcceptedInputKinds(ev.acceptedInputKinds);
+              setAcceptedPartKinds(ev.partKinds);
+              if (ev.threadId) {
+                threadIdRef.current = ev.threadId;
+                setThreadId(ev.threadId);
+                void adapters.storage.save(threadStorageKey(appId), ev.threadId);
+              }
+              // Cutting the stream here also stops the run on the runtime side.
+              if (!partsAcknowledged(ev)) {
+                endTurnWith(() => {
+                  setError(
+                    sentShape === 1
+                      ? "This agent's runtime did not accept the attached images, so the message was stopped before the agent answered."
+                      : "This agent's runtime did not accept the attachments, so the message was stopped before the agent answered.",
+                  );
+                  setErrorCode(CLIENT_ERROR_CODES.PARTS_UNSUPPORTED);
+                });
+                return;
+              }
+            } else if (ev.kind === "message") {
+              // Absent status/activeTool mean "no change" — never touched, so
+              // an unknown frame type leaves both standing (guuey#91 rule).
+              if (ev.status !== undefined) setStatus(ev.status);
+              if (ev.activeTool !== undefined) setActiveTool(ev.activeTool);
+              renderAssistant(ev.assistantText);
+              // Additively fold the frame's AgEvents into the AgJSON reducer
+              // when opted in. The text surface above is untouched; only VALID
+              // AgEvents advance the reducer (bypass frames carry [] and leave
+              // `reduceResult` null — see the return-type contract).
+              if (preserveBlocksRef.current && ev.agEvents.length > 0) {
+                if (!reducerRef.current) reducerRef.current = new Reducer();
+                for (const agEvent of ev.agEvents) reducerRef.current.push(agEvent);
+                setReduceResult(reducerRef.current.result());
+              }
+            } else if (ev.kind === "error") {
+              // In-band failure frame — the code moves in lockstep with the
+              // message (an event without one carries null rather than leaving
+              // a previous turn's code standing).
+              sawErrorFrame = true;
+              setError(ev.message);
+              setErrorCode(ev.code);
+              if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
+            } else if (ev.kind === "profile-link") {
+              setProfileLinkRequest(ev.request);
+            } else if (ev.kind === "done") {
+              // The spec'd end of the invoke (AgJSON §8.0): the stream closes after it.
+              sawDone = true;
+              if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
             }
-            // guuey#2293: a runtime that predates attachments parses the
-            // images and ignores them, and would answer the words alone. Only
-            // an acknowledgement of every image lets the turn run; without it
-            // the stream is cut here, before any reply, which also stops the
-            // run on the runtime side.
-            if (attachments.length > 0 && ev.attachmentsAccepted !== attachments.length) {
-              endTurnWith(() => {
-                setError("This agent's runtime did not accept the attached images, so the message was stopped before the agent answered.");
-                setErrorCode(CLIENT_ERROR_CODES.ATTACHMENTS_UNSUPPORTED);
-              });
-              break;
-            }
-          } else if (ev.kind === "message") {
-            // Absent status/activeTool mean "no change" — never touched, so
-            // an unknown frame type leaves both standing (guuey#91 rule).
-            if (ev.status !== undefined) setStatus(ev.status);
-            if (ev.activeTool !== undefined) setActiveTool(ev.activeTool);
-            renderAssistant(ev.assistantText);
-            // Additively fold the frame's AgEvents into the AgJSON reducer
-            // when opted in. The text surface above is untouched; only VALID
-            // AgEvents advance the reducer (bypass frames carry [] and leave
-            // `reduceResult` null — see the return-type contract).
-            if (preserveBlocksRef.current && ev.agEvents.length > 0) {
-              if (!reducerRef.current) reducerRef.current = new Reducer();
-              for (const agEvent of ev.agEvents) reducerRef.current.push(agEvent);
-              setReduceResult(reducerRef.current.result());
-            }
-          } else if (ev.kind === "error") {
-            // In-band failure frame — the code moves in lockstep with the
-            // message (an event without one carries null rather than leaving
-            // a previous turn's code standing).
-            sawErrorFrame = true;
-            setError(ev.message);
-            setErrorCode(ev.code);
-            if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
-          } else if (ev.kind === "profile-link") {
-            setProfileLinkRequest(ev.request);
-          } else if (ev.kind === "done") {
-            // The spec'd end of the invoke (AgJSON §8.0): the stream closes after it.
-            sawDone = true;
-            if (ev.threadClosed !== undefined) setThreadClosed(ev.threadClosed);
           }
+        };
+
+        try {
+          await streamTurn(bodyFor(sentShape));
+        } catch (e) {
+          // W1: a runtime before shape 2 refuses the body before the stream,
+          // storing nothing. The SAME turn goes once more as shape 1 (same
+          // clientMessageId, so the runtime's idempotency still holds), and
+          // this instance writes shape 1 for every new turn from now on. Any
+          // other refusal, or one after shape 1, is the turn's failure below.
+          if (sentShape !== 2 || admitted || controller.signal.aborted || !isRequestShapeRefusal(e)) throw e;
+          downgradedRef.current = true;
+          sentShape = 1;
+          turnShapesRef.current.set(clientMessageId, 1);
+          const form = shape1FormOf(parts);
+          if (!form.ok) {
+            // Shape 1 cannot carry this turn's parts: the turn fails here, as
+            // a send that never reached the agent, rather than going without them.
+            setError(describeUserPartRefusal(form.refusal));
+            setErrorCode(CLIENT_ERROR_CODES.PARTS_INVALID);
+            markSend("failed");
+            return;
+          }
+          attachments = form.attachments;
+          await streamTurn(bodyFor(1));
         }
         // ── A stream that CLOSED without `done` ─────────────────────────
         // The pod sends `done` on every path where the client is still
@@ -1220,7 +1357,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         }
       }
     },
-    [endpointUrl, appId, status, opts.signal, setThreadClosed, setAcceptedInputKinds],
+    [endpointUrl, appId, status, opts.signal, setThreadClosed, setAcceptedInputKinds, setAcceptedPartKinds],
   );
 
   const newClientMessageId = useCallback((): string => adaptersRef.current.generateId(), []);
@@ -1248,5 +1385,6 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     adopted,
     sendStates,
     acceptedInputKinds,
+    acceptedPartKinds,
   };
 }
