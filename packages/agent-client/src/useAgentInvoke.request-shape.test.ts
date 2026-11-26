@@ -181,7 +181,9 @@ describe("useAgentInvoke — W1, the one fallback", () => {
  * A refusal face pinned in `fixtures/` (its status, headers and body bytes), read the way every transport reads a
  * refusal: through `agentResponseErrorFrom`.
  */
-async function refusalFace(file: "shape2-refusal.runtime.json" | "shape2-refusal.dev-server.json"): Promise<AgentResponseError> {
+async function refusalFace(
+  file: "shape2-refusal.runtime.json" | "shape2-refusal.dev-server.json" | "shape2-refusal.runtime-other-input.twin.json",
+): Promise<AgentResponseError> {
   const raw: unknown = JSON.parse(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), "utf8"));
   if (typeof raw !== "object" || raw === null) throw new Error(`${file}: not an object`);
   const status: unknown = Reflect.get(raw, "status");
@@ -214,6 +216,19 @@ describe("useAgentInvoke — W1 on each released server's face", () => {
       unmount();
     });
   }
+
+  it("cto's M3 twin: another `input: ...` refusal (shape2-refusal.runtime-other-input.twin.json) never falls back", async () => {
+    const face = await refusalFace("shape2-refusal.runtime-other-input.twin.json");
+    const { adapters, bodies } = podAdapters([{ refuse: face }, ANSWER]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(bodies).toHaveLength(1);
+    expect(result.current.errorCode).toBe("INVALID_REQUEST");
+    expect(result.current.sendStates).toEqual({ "cmid-1": "failed" });
+    unmount();
+  });
 
   it("the dev server's sentence beside a code is not its face: no fallback, the code stands", async () => {
     const coded = await agentResponseErrorFrom(

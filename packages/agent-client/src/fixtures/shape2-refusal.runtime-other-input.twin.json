@@ -1,0 +1,9 @@
+{
+  "about": "W1's TWIN (cto's M3): a runtime refusing a shape-1 field with ANOTHER `input: ...` sentence. It is an ordinary refusal of the turn, never a reason to send it again: the client never falls back on it.",
+  "source": "the same 400 JSON { code, message } envelope as shape2-refusal.runtime.json, with a message no released runtime sends for a shape-2 body.",
+  "status": 400,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"code\":\"INVALID_REQUEST\",\"message\":\"input: exceeds 32768 bytes\"}"
+}

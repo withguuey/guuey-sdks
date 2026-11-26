@@ -123,9 +123,14 @@ describe("the shape-2 corpus (W6)", () => {
 });
 
 describe("isRequestShapeRefusal — an older runtime's refusal of a shape-2 body (W1)", () => {
-  it("is a 400 INVALID_REQUEST whose message names the input field", () => {
+  it("is a 400 INVALID_REQUEST whose message is EXACTLY the released runtimes' sentence", () => {
     expect(isRequestShapeRefusal(new AgentResponseError("input: non-empty string required", 400, AGENT_ERROR_CODES.INVALID_REQUEST))).toBe(true);
-    expect(isRequestShapeRefusal(new AgentResponseError("input: must be a string", 400, AGENT_ERROR_CODES.INVALID_REQUEST))).toBe(true);
+  });
+
+  it("cto's M3 RED: another `input: …` refusal of a shape-1 field never falls back (no re-send on a real refusal)", () => {
+    for (const message of ["input: exceeds 32768 bytes", "input: must be a string", "input: non-empty string required.", " input: non-empty string required"]) {
+      expect(isRequestShapeRefusal(new AgentResponseError(message, 400, AGENT_ERROR_CODES.INVALID_REQUEST))).toBe(false);
+    }
   });
 
   it("is nothing else: another field, another code, another status, or no coded refusal at all", () => {
