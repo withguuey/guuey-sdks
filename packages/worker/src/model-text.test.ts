@@ -3,8 +3,8 @@
  * `serveNative` worker that declares {@link MODEL_TEXT_INPUT_KIND_CAPABILITIES}.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { inputKindCapability } from "./protocol.js";
-import { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
+import { inputKindCapability, type Invoke } from "./protocol.js";
+import { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf, withHistory } from "./model-text.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -41,5 +41,34 @@ describe("modelTextOf / modelInputOf", () => {
 
   it("the declared capabilities are exactly the kinds modelTextOf handles, by the protocol's own name", () => {
     expect(MODEL_TEXT_INPUT_KIND_CAPABILITIES).toEqual([inputKindCapability("context-only")]);
+  });
+});
+
+// guuey#2549: a worker that declares `input-kind:context-only` must hand the model the shared sentence for a turn the
+// user sent without text, now and in every later turn's history. withHistory moved here from the templates (v1 shape).
+describe("withHistory", () => {
+  const turn = (over: Partial<Invoke>): Invoke => ({
+    type: "invoke",
+    input: "",
+    identity: { userId: "u_1", authMode: "anonymous" },
+    fs: { app: "/app", home: "/home", session: "/session" },
+    history: [],
+    ...over,
+  });
+
+  it("an empty current turn reads the sentence, never an empty prompt", () => {
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    expect(withHistory(turn({ inputKind: "context-only" }))).toBe(CONTEXT_ONLY_TURN_TEXT);
+  });
+
+  it("a stored context-only turn replays as the same sentence; ordinary text is untouched", () => {
+    const out = withHistory(
+      turn({ input: "and now?", history: [{ role: "user", text: "", inputKind: "context-only" }, { role: "agent", text: "a cat" }] }),
+    );
+    expect(out).toBe(`<conversation_history>\nUser: ${CONTEXT_ONLY_TURN_TEXT}\nAssistant: a cat\n</conversation_history>\n\nand now?`);
+  });
+
+  it("no history: the input alone", () => {
+    expect(withHistory(turn({ input: "hi" }))).toBe("hi");
   });
 });

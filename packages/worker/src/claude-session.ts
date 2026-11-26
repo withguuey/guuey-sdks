@@ -39,7 +39,7 @@ export function cliSessionRefusedMessage(reason: CliSessionRefusal): string {
 
 /**
  * The `error` of a resume this worker cannot apply. A resumed invoke carries no history (the session holds it), so a
- * worker that cannot continue the session must not answer: the Router resets and re-runs the turn as a start.
+ * worker that cannot continue the session must not answer: the turn fails with this reason.
  */
 export function cliSessionNotAppliedMessage(why: string): string {
   return `${CLI_SESSION_RESUME_FAILED}: not applied (${why})`;

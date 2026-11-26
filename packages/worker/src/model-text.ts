@@ -12,7 +12,7 @@
  * {@link modelTextOf} / {@link modelInputOf} may declare {@link MODEL_TEXT_INPUT_KIND_CAPABILITIES}
  * on its hello, and only then.
  */
-import { inputKindCapability, type InputKind } from "./protocol.js";
+import { inputKindCapability, type InputKind, type Invoke } from "./protocol.js";
 
 /** The model-only sentence for a context-only turn. Versioned with this package; never persisted. */
 export const CONTEXT_ONLY_TURN_TEXT =
@@ -43,4 +43,17 @@ export function modelInputOf(turn: { input: string; inputKind?: InputKind }): st
   const text = modelTextOf({ text: turn.input, ...(turn.inputKind !== undefined ? { inputKind: turn.inputKind } : {}) });
   if (text !== turn.input) process.stderr.write(`[guuey] input substituted: kind=${String(turn.inputKind)}\n`);
   return text;
+}
+
+/**
+ * A START turn's model text with the thread folded in ahead of it (v1 keep-it-simple history handling): every prior turn
+ * as `User:` / `Assistant:` lines inside `<conversation_history>`, then the turn's own input. Every turn's text goes
+ * through {@link modelTextOf}, so a worker that uses this may declare {@link MODEL_TEXT_INPUT_KIND_CAPABILITIES}. A
+ * RESUME needs none of it: the CLI's own session holds the thread.
+ */
+export function withHistory(invoke: Pick<Invoke, "input" | "inputKind" | "history">): string {
+  const input = modelInputOf(invoke);
+  if (invoke.history.length === 0) return input;
+  const lines = invoke.history.map((h) => `${h.role === "agent" ? "Assistant" : "User"}: ${modelTextOf(h)}`);
+  return `<conversation_history>\n${lines.join("\n")}\n</conversation_history>\n\n${input}`;
 }

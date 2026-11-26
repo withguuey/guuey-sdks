@@ -9,28 +9,24 @@
  * `runInvoke`, the platform's own consumer of this exact snapshot shape).
  */
 import { createRequire } from "node:module";
-import { query, type McpServerConfig, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import {
-  CLAUDE_FORBIDDEN_ENV,
   MODEL_TEXT_INPUT_KIND_CAPABILITIES,
   TOOL_GATES_CAPABILITY,
-  anthropicUserContent,
-  cliSessionNotAppliedMessage,
-  makeClaudeSpawner,
-  modelInputOf,
   readLaunchEnvelope,
+  runClaudeTurn,
   serveNative,
   type ClaudeKeyKind,
 } from "@guuey/worker";
 import { claudeToolRules } from "@guuey/config";
-import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
+import { loadAgent, systemPrompt, mcpEndpoints } from "./agent-config.js";
 
 /**
  * The model credential (guuey#2139). A platform launch delivers it privately
  * on a descriptor (`readLaunchEnvelope`, read once, here, before anything is
  * spawned); otherwise it comes from this process's environment, as before.
  * Either way the Claude CLI receives it only on its own private descriptor
- * (`makeClaudeSpawner`), never in its environment or argv, so the CLI's Bash
+ * (runClaudeTurn's `makeClaudeSpawner`), never in its environment or argv, so the CLI's Bash
  * and tool children never inherit it. A local run with only a Claude OAuth
  * token (`CLAUDE_CODE_OAUTH_TOKEN`, no API key) hands that token over the same
  * way, on the CLI's OAuth descriptor input.
@@ -45,38 +41,6 @@ const credential: { key: string; keyKind: ClaudeKeyKind } | undefined =
     : oauthToken !== undefined
       ? { key: oauthToken, keyKind: "oauth-token" }
       : undefined;
-
-/** This process's environment minus every credential, auth-path and inspector variable. */
-function cliEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined && !CLAUDE_FORBIDDEN_ENV.includes(name)) env[name] = value;
-  }
-  return env;
-}
-
-/** How long the MCP servers may stay `pending` before the turn goes on without them. */
-const MCP_READY_DEADLINE_MS = 15_000;
-/**
- * How long the CLI may take to answer a control request (`setMcpServers`,
- * `mcpServerStatus`). A CLI that never answers fails the turn instead of
- * hanging it. Same value as `@guuey/host`'s `CLAUDE_STARTUP_DEADLINE_MS`: the
- * pinned CLI connects the servers before it answers `setMcpServers` and gives
- * a hung server up to 30 s, so this outlasts that wait.
- */
-const CLAUDE_STARTUP_DEADLINE_MS = 60_000;
-
-/** Resolve with `work`, or reject naming `what` once the startup deadline passes first. */
-function withStartupDeadline<T>(work: Promise<T>, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expiry = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`Claude CLI startup failed: no answer to ${what} within ${String(CLAUDE_STARTUP_DEADLINE_MS)} ms`)),
-      CLAUDE_STARTUP_DEADLINE_MS,
-    );
-  });
-  return Promise.race([work, expiry]).finally(() => clearTimeout(timer));
-}
 
 /**
  * This worker is tsup-bundled (`noExternal`), which breaks the SDK's own
@@ -123,8 +87,8 @@ await serveNative(
     );
     // guuey#2139: the servers (and their header values) reach the CLI over its
     // stdin with `setMcpServers`, never as `--mcp-config` on its argv; the
-    // spawner refuses any argument or environment value that carries one.
-    const headerValues = Object.values(endpoints).flatMap((ep) => Object.values(ep.headers));
+    // spawner runClaudeTurn builds refuses any argument or environment value
+    // that carries one.
     // The agent's tool gates (`tools.allowlist` / `tools.denylist` in
     // guuey.json, as narrowed by the turn's mode) and this turn's withholds
     // (`invoke.withheldTools`), in the SDK's own rule spelling
@@ -136,158 +100,59 @@ await serveNative(
     // A denylist entry that cannot be read makes the rules keep no MCP tool
     // this turn (they fail closed); name it so it can be fixed.
     for (const error of toolRules.errors) console.error(`[guuey] ${error}`);
-    // The agent configuration this turn hands the SDK (see the posture notes on `query()` below).
-    const agentOptions = {
-      ...(agent.model ? { model: agent.model } : {}),
-      allowedTools: toolRules.allowedTools,
-      ...(toolRules.disallowedTools.length > 0 ? { disallowedTools: toolRules.disallowedTools } : {}),
-      canUseTool: toolRules.canUseTool,
-      tools: [],
-    };
-    const prompt = systemPrompt(invoke, agent);
-    // The conversation's own configuration, which the session is kept for: the same rules WITHOUT this turn's
-    // withholds. A tool withheld for one turn is still refused (`agentOptions` above is what query() gets), but it
-    // does not change the conversation's configuration, so it never starts the conversation over. A different mode is
-    // a different configuration (its prompt and tools), and it does.
-    const stableRules = claudeToolRules(agent.tools, Object.keys(mcpServers), { builtins: [] });
-    const sessionHeader = {
-      ...agentOptions,
-      allowedTools: stableRules.allowedTools,
-      disallowedTools: stableRules.disallowedTools,
-    };
-    // guuey#3550: continue the conversation's own CLI session when the platform names one. A resumed invoke carries no
-    // history (the session holds it), so its message has none; a resume this worker cannot apply throws, and the
-    // platform re-runs the turn as a start with its history. `claudeSession` sends the turn's hello, so it is called
-    // before anything is emitted. An empty prompt passes no system prompt to query(), so it cannot resume either.
-    const resumes = invoke.cliSession?.mode === "resume";
-    const content = anthropicUserContent(invoke, resumes ? modelInputOf(invoke) : withHistory(invoke));
-    const session = emit.claudeSession?.({ systemPrompt: prompt || undefined, header: sessionHeader, servers: mcpServers, content });
-    // An emit without claudeSession (not serveNative's) cannot continue a session, and a resume has no history to run with.
-    if (resumes && session === undefined) throw new Error(cliSessionNotAppliedMessage("this serve loop has no claudeSession"));
-    // Set when the CLI's first message does not confirm the session: the turn's error, and nothing is forwarded.
-    let resumeFailed: string | undefined;
-    let openGate!: () => void;
-    const gate = new Promise<void>((resolve) => (openGate = resolve));
-    let endInput!: () => void;
-    const inputDone = new Promise<void>((resolve) => (endInput = resolve));
-    // The one user message goes out only once the MCP gate below decided; a
-    // failed startup opens the gate with `send` still false, so none is sent.
-    let send = false;
-    async function* userMessages(): AsyncGenerator<SDKUserMessage> {
-      await gate;
-      if (!send) return;
-      // The turn's images (if any) as image blocks, then the text: the same blocks the hello hashed.
-      yield { type: "user", message: { role: "user", content }, parent_tool_use_id: null };
-      await inputDone;
-    }
-    const q = query({
-      prompt: userMessages(),
+    // One call runs the whole turn (@guuey/worker's runClaudeTurn): the hello and, when the platform keeps the
+    // conversation's CLI session, its resume; the MCP servers over the CLI's stdin; every SDK message forwarded; the
+    // result text returned. The options below are this app's posture; runClaudeTurn adds persistSession: false, and
+    // only a platform session's own options win over them (its id, its config root, its pinned CLI).
+    return runClaudeTurn({
+      query,
+      invoke,
+      emit,
+      systemPrompt: systemPrompt(invoke, agent),
+      servers: mcpServers,
       options: {
-        ...agentOptions,
-        ...(prompt ? { systemPrompt: prompt } : {}),
-        // Same posture as `@guuey/host`'s `buildOptions` (options.ts):
-        // - allowedTools: the allowlist translated into SDK rules, else every
-        //   tool of every server (`mcp__<server>`); an allow rule only
-        //   pre-approves.
-        // - disallowedTools: the denylist and this turn's withholds, removed
-        //   from the model's catalog outright (deny wins).
-        // - canUseTool: under an explicit allowlist an unlisted pick is
-        //   DENIED with a message the model can read; otherwise every pick is
-        //   allowed. Either way the SDK's interactive ask stage, which
-        //   nothing answers headless, is never reached.
-        // - tools: [] — purely MCP-driven; no Bash/file/search built-ins.
-        // - settingSources: [] — never load the machine's ~/.claude or
-        //   project settings into this worker (a dev box's logged-in Claude
-        //   Code MCPs/plugins would leak into the tool catalog).
-        // - strictMcpConfig: true — the snapshot's servers only; ignore
-        //   .mcp.json / user settings / plugins.
+        ...(agent.model ? { model: agent.model } : {}),
+        // allowedTools: the allowlist translated into SDK rules, else every tool of every server (`mcp__<server>`);
+        // an allow rule only pre-approves. disallowedTools: the denylist and this turn's withholds, removed from the
+        // model's catalog outright (deny wins). canUseTool: under an explicit allowlist an unlisted pick is DENIED with
+        // a message the model can read; otherwise every pick is allowed, so the SDK's interactive ask stage, which
+        // nothing answers headless, is never reached. Same posture as `@guuey/host`'s `buildOptions` (options.ts).
+        allowedTools: toolRules.allowedTools,
+        ...(toolRules.disallowedTools.length > 0 ? { disallowedTools: toolRules.disallowedTools } : {}),
+        canUseTool: toolRules.canUseTool,
+        // tools: [] — purely MCP-driven; no Bash/file/search built-ins.
+        tools: [],
+        // settingSources: [] — never load the machine's ~/.claude or project settings into this worker (a dev box's
+        // logged-in Claude Code MCPs/plugins would leak into the tool catalog). strictMcpConfig: true — the snapshot's
+        // servers only; ignore .mcp.json / user settings / plugins.
         settingSources: [],
         strictMcpConfig: true,
-        // - persistSession: false — without a platform session (above), each
-        //   turn's thread arrives in `invoke.history`, and a persisted
-        //   transcript would land under $HOME/.claude/projects/. Hosted, $HOME
-        //   is the end user's DURABLE home, so the default would keep every
-        //   turn's text there across sessions and pods. With a session, the
-        //   platform's config root keeps it instead (`session.options` below).
-        persistSession: false,
-        // - includePartialMessages: true — token streaming. Without it the SDK
-        //   yields each assistant message only when it is complete, so the end
-        //   user sees a reply arrive whole. With it, `stream_event` partials
-        //   are emitted between them and the platform turns them into text
-        //   deltas, deduped against the complete message that follows. Same
-        //   posture as `@guuey/host` (frameworks/claude-options.ts).
+        // includePartialMessages: true — token streaming: the Router forwards the deltas, deduped against the
+        // complete message that follows. Same posture as `@guuey/host` (frameworks/claude-options.ts).
         includePartialMessages: true,
-        env: { ...cliEnv(), ...session?.env },
-        ...(credential !== undefined
-          ? { spawnClaudeCodeProcess: makeClaudeSpawner({ ...credential, secrets: headerValues }) }
-          : {}),
         ...(agent.runtime?.maxTurns ? { maxTurns: agent.runtime.maxTurns } : {}),
         ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
-        // The session id, persistSession: true and the platform's own CLI binary, the one the session file belongs to.
-        ...session?.options,
       },
+      // The model key on the CLI's own descriptor only (runClaudeTurn builds the spawner); the CLI's env is this
+      // process's minus every credential, auth-path and inspector variable (runClaudeTurn's default).
+      ...(credential !== undefined ? { credential } : {}),
+      // The conversation's own rules, WITHOUT this turn's withholds: what the session is kept for. A tool withheld for
+      // one turn is still refused (the options above), but it never starts the conversation over.
+      sessionRules: claudeToolRules(agent.tools, Object.keys(mcpServers), { builtins: [] }),
     });
-    let result = "";
-    const messages = (async () => {
-      let confirmed = session === undefined;
-      for await (const message of q) {
-        if (!confirmed) {
-          resumeFailed = session?.confirmFirst(message);
-          if (resumeFailed !== undefined) {
-            endInput();
-            openGate();
-            q.close();
-            return;
-          }
-          confirmed = true;
-        }
-        emit.native(JSON.parse(JSON.stringify(message)));
-        if (message.type === "result") {
-          if (message.subtype === "success") result = message.result;
-          endInput();
-        }
-      }
-    })();
-    try {
-      await withStartupDeadline(q.setMcpServers(mcpServers), "setMcpServers");
-      const readyBy = Date.now() + MCP_READY_DEADLINE_MS;
-      while (
-        Date.now() < readyBy &&
-        (await withStartupDeadline(q.mcpServerStatus(), "mcpServerStatus")).some((s) => s.status === "pending")
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    } catch (err) {
-      endInput();
-      openGate();
-      q.close();
-      // The setup error is the turn's error; the stream's own end is awaited, not reported.
-      await Promise.allSettled([messages]);
-      throw resumeFailed !== undefined ? new Error(resumeFailed) : err;
-    }
-    if (resumeFailed !== undefined) {
-      await Promise.allSettled([messages]);
-      throw new Error(resumeFailed);
-    }
-    send = true;
-    openGate();
-    await messages;
-    endInput();
-    if (resumeFailed !== undefined) throw new Error(resumeFailed);
-    return result;
   },
   {
     framework: "claude-agent-sdk",
     sdkName: "@anthropic-ai/claude-agent-sdk",
-    // Every turn's text goes through withHistory (agent-config.ts), so this
+    // Every turn's text goes through @guuey/worker's model text (runClaudeTurn), so this
     // worker handles a turn sent without text; the Router reads it here.
     // It also applies the agent's tool gates (the rules above), so every hello
     // says so with tool-gates.v1 (guuey#2670).
     capabilities: [...MODEL_TEXT_INPUT_KIND_CAPABILITIES, TOOL_GATES_CAPABILITY],
-    // The turn's images reach the model (anthropicUserContent above) and are
-    // stored in the turn's session storage, so the hello says so.
+    // The turn's images reach the model (runClaudeTurn sends them as image blocks)
+    // and are stored in the turn's session storage, so the hello says so.
     images: true,
-    // The hello waits for `emit.claudeSession` above, so it can carry the session's block (guuey#3550).
+    // The hello waits for runClaudeTurn's `emit.claudeSession`, so it can carry the session's block (guuey#3550).
     claudeSession: true,
   }
 );

@@ -25,8 +25,9 @@ import {
   openaiTurnInput,
   readLaunchEnvelope,
   serveNative,
+  withHistory,
 } from "@guuey/worker";
-import { loadAgent, systemPrompt, mcpEndpoints, withHistory } from "./agent-config.js";
+import { loadAgent, systemPrompt, mcpEndpoints } from "./agent-config.js";
 
 /**
  * The model credential (guuey#2139). A platform launch delivers it privately
@@ -110,7 +111,7 @@ await serveNative(
   {
     framework: "openai-agents-sdk",
     sdkName: "@openai/agents",
-    // Every turn's text goes through withHistory (agent-config.ts), so this
+    // Every turn's text goes through withHistory (@guuey/worker), so this
     // worker handles a turn sent without text; the Router reads it here.
     // It also applies the agent's tool gates (each server's `toolFilter` above), so every hello
     // says so with tool-gates.v1 (guuey#2670).

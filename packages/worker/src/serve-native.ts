@@ -73,7 +73,7 @@ export interface NativeEmit {
    * On an invoke with no session, or a `start` this worker cannot apply, it answers `undefined`, applies nothing and
    * sends a plain hello; the turn runs as before, with its history (one line on stderr says why a `start` was not
    * applied). A `resume` carries NO history, because the session holds it, so a `resume` this worker cannot apply
-   * THROWS (`cli_session_resume_failed: not applied (...)`) and the Router re-runs the turn as a start: the platform
+   * THROWS (`cli_session_resume_failed: not applied (...)`): the turn fails with that reason. It cannot apply when the platform
    * did not set the CLI's config root and binary, the system prompt is not one string, or the hello has already gone.
    * It also throws on a refusal: a session id that is not a UUID, a stored session that does not match the
    * platform's record.

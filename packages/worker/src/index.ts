@@ -106,7 +106,20 @@ export {
   type WorkerClaudeSession,
   type WorkerClaudeSessionTurn,
 } from "./claude-session.js";
-export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf } from "./model-text.js";
+export { CONTEXT_ONLY_TURN_TEXT, MODEL_TEXT_INPUT_KIND_CAPABILITIES, modelInputOf, modelTextOf, withHistory } from "./model-text.js";
+export {
+  CLAUDE_TURN_MCP_READY_DEADLINE_MS,
+  CLAUDE_TURN_STARTUP_DEADLINE_MS,
+  runClaudeTurn,
+  type ClaudeQueryFn,
+  type ClaudeQueryHandle,
+  type ClaudeTurn,
+  type ClaudeTurnMessage,
+  type ClaudeTurnOwnOptions,
+  type ClaudeTurnServer,
+  type ClaudeTurnServerStatus,
+  type ClaudeTurnUserMessage,
+} from "./claude-turn.js";
 export { invokeImagesCapabilities, isInvokeImageMimeType, isStandardBase64 } from "./images.js";
 export {
   anthropicUserContent,
