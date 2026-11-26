@@ -262,9 +262,9 @@ export class ThreadStore {
 
   /**
    * Resolve the thread for this invoke:
-   * - `threadId` found AND owned by `userId` → return it (the happy path);
+   * - `threadId` found, owned by `userId` AND in this `appId` → return it (the happy path);
    * - otherwise (no `threadId`, stale/unknown id, OR owned by a different
-   *   identity) → mint a fresh Thread with a server-assigned id and return it.
+   *   identity, OR in another app) → mint a fresh Thread with a server-assigned id and return it.
    *
    * Minting-fresh on an owner mismatch (rather than erroring) is deliberate:
    * the caller's anon `guuey_guest` cookie can rotate (cleared, or a cross-site
@@ -280,10 +280,17 @@ export class ThreadStore {
   async ensureThread(input: EnsureThreadInput): Promise<string> {
     if (input.threadId) {
       const existing = await this.db.getThread(input.threadId);
-      if (existing && existing.userId === input.userId && threadClosure(existing) === undefined) {
+      // The app wall: the same person (one Guuey sub, or one BYO subject across an issuer's apps) replaying another
+      // app's thread id mints fresh here, exactly as another person's does, so no app reads or extends another's thread.
+      if (
+        existing &&
+        existing.userId === input.userId &&
+        existing.appId === input.appId &&
+        threadClosure(existing) === undefined
+      ) {
         return existing.id;
       }
-      // Not found, owned by a different identity, OR closed → fall through, mint fresh.
+      // Not found, owned by a different identity or app, OR closed → fall through, mint fresh.
     }
     const now = new Date().toISOString();
     const row: ThreadRow = {

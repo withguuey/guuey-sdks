@@ -75,6 +75,24 @@ describe('ThreadStore.ensureThread', () => {
     expect(db.threads.get(fresh)?.userId).toBe('g_other');
   });
 
+  it("the app wall: the SAME person replaying ANOTHER app's threadId mints fresh, and the other thread is untouched", async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    const appB = await store.ensureThread({ userId: 'u_same', appId: 'app_b', region: 'us-east-1' });
+    const onAppA = await store.ensureThread({ threadId: appB, userId: 'u_same', appId: 'app_a', region: 'us-east-1' });
+    expect(onAppA).not.toBe(appB);
+    expect(db.threads.get(onAppA)).toMatchObject({ userId: 'u_same', appId: 'app_a' });
+    expect(db.threads.get(appB)).toMatchObject({ userId: 'u_same', appId: 'app_b', lastSeq: 0 });
+  });
+
+  it('the twin: the same person in the SAME app reuses the thread (the wall is per app, not per send)', async () => {
+    const db = new FakePersistence();
+    const store = new ThreadStore(db);
+    const id = await store.ensureThread({ userId: 'u_same', appId: 'app_a', region: 'us-east-1' });
+    expect(await store.ensureThread({ threadId: id, userId: 'u_same', appId: 'app_a', region: 'us-east-1' })).toBe(id);
+    expect(db.threads.size).toBe(1);
+  });
+
   it('mints a fresh thread (new id) when the passed threadId is stale/unknown', async () => {
     const db = new FakePersistence();
     const store = new ThreadStore(db);
