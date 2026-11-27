@@ -7,8 +7,8 @@
  * local turn has never delivered images, attachments, page context or turn context (dev-server.ts `readInvokeBody`
  * reads `input` and `sessionId` alone), so the non-text blocks and the run context of a shape-2 body are COUNTED and
  * named on stderr, never refused by kind. This package cannot import the Router's private parse, so the two are to
- * be pinned to ONE shared fixture corpus (`@guuey/agent-client`'s `src/fixtures/agjson-corpus`, OWED: it lands with
- * chat's R1). Once it lands, this package's corpus test FAILS when the corpus is missing; it never skips.
+ * be pinned to ONE shared fixture corpus (`@guuey/agent-client`'s `src/fixtures/agjson-corpus`). This package's
+ * `invoke-shape2.corpus.test.ts` reads every body in it, and FAILS when the corpus is missing; it never skips.
  */
 import { checkAgInput } from "@silverprotocol/core";
 
