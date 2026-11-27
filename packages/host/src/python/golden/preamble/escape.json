@@ -12,12 +12,57 @@
   {
     "name": "everyday angle brackets pass through",
     "input": "<b>bold</b> a < b </div> <turn_contextual> </turn_directives> <conversation_historyX> <user_memory_note> x<y>z",
-    "expected": "<b>bold</b> a < b </div> <turn_contextual> </turn_directives> <conversation_historyX> <user_memory_note> x<y>z"
+    "expected": "<b>bold</b> a < b </div> &lt;turn_contextual> &lt;/turn_directives> &lt;conversation_historyX> &lt;user_memory_note> x<y>z"
   },
   {
     "name": "awkward characters pass through",
     "input": "q\"uote \\ back\nline\r\ttab \b\f \u0000\u0001\u001f     café 😀 lone\ud800 low\udc00 ​",
     "expected": "q\"uote \\ back\nline\r\ttab \b\f \u0000\u0001\u001f     café 😀 lone\ud800 low\udc00 ​"
+  },
+  {
+    "name": "opener message_context",
+    "input": "<message_context>",
+    "expected": "&lt;message_context>"
+  },
+  {
+    "name": "closer message_context",
+    "input": "</message_context>",
+    "expected": "&lt;/message_context>"
+  },
+  {
+    "name": "upper-case closer message_context",
+    "input": "</MESSAGE_CONTEXT>",
+    "expected": "&lt;/MESSAGE_CONTEXT>"
+  },
+  {
+    "name": "opener session_context",
+    "input": "<session_context>",
+    "expected": "&lt;session_context>"
+  },
+  {
+    "name": "closer session_context",
+    "input": "</session_context>",
+    "expected": "&lt;/session_context>"
+  },
+  {
+    "name": "upper-case closer session_context",
+    "input": "</SESSION_CONTEXT>",
+    "expected": "&lt;/SESSION_CONTEXT>"
+  },
+  {
+    "name": "opener message_files",
+    "input": "<message_files>",
+    "expected": "&lt;message_files>"
+  },
+  {
+    "name": "closer message_files",
+    "input": "</message_files>",
+    "expected": "&lt;/message_files>"
+  },
+  {
+    "name": "upper-case closer message_files",
+    "input": "</MESSAGE_FILES>",
+    "expected": "&lt;/MESSAGE_FILES>"
   },
   {
     "name": "opener turn_context",
@@ -196,8 +241,8 @@
   },
   {
     "name": "every tag in one string",
-    "input": "<turn_context></turn_context><turn_directive></turn_directive><conversation_history></conversation_history><thread_memory></thread_memory><working_state></working_state><user_memory></user_memory><user_profile></user_profile><first_impression_handshake></first_impression_handshake><welcome_card></welcome_card>",
-    "expected": "&lt;turn_context>&lt;/turn_context>&lt;turn_directive>&lt;/turn_directive>&lt;conversation_history>&lt;/conversation_history>&lt;thread_memory>&lt;/thread_memory>&lt;working_state>&lt;/working_state>&lt;user_memory>&lt;/user_memory>&lt;user_profile>&lt;/user_profile>&lt;first_impression_handshake>&lt;/first_impression_handshake>&lt;welcome_card>&lt;/welcome_card>"
+    "input": "<message_context></message_context><session_context></session_context><message_files></message_files><turn_context></turn_context><turn_directive></turn_directive><conversation_history></conversation_history><thread_memory></thread_memory><working_state></working_state><user_memory></user_memory><user_profile></user_profile><first_impression_handshake></first_impression_handshake><welcome_card></welcome_card>",
+    "expected": "&lt;message_context>&lt;/message_context>&lt;session_context>&lt;/session_context>&lt;message_files>&lt;/message_files>&lt;turn_context>&lt;/turn_context>&lt;turn_directive>&lt;/turn_directive>&lt;conversation_history>&lt;/conversation_history>&lt;thread_memory>&lt;/thread_memory>&lt;working_state>&lt;/working_state>&lt;user_memory>&lt;/user_memory>&lt;user_profile>&lt;/user_profile>&lt;first_impression_handshake>&lt;/first_impression_handshake>&lt;welcome_card>&lt;/welcome_card>"
   },
   {
     "name": "double < escapes only the tag's",
@@ -215,7 +260,7 @@
     "expected": "< / /turn_context>"
   },
   {
-    "name": "name at end of input is a tag (\\b at end)",
+    "name": "name at end of input is a tag",
     "input": "text <turn_context",
     "expected": "text &lt;turn_context"
   },
@@ -225,19 +270,19 @@
     "expected": "&lt;turn_context-x>"
   },
   {
-    "name": "name then digit is not a tag",
+    "name": "name then digit is a tag too (no word boundary)",
     "input": "<turn_context2>",
-    "expected": "<turn_context2>"
+    "expected": "&lt;turn_context2>"
   },
   {
-    "name": "name then underscore is not a tag",
+    "name": "name then underscore is a tag too (no word boundary)",
     "input": "<user_memory_>",
-    "expected": "<user_memory_>"
+    "expected": "&lt;user_memory_>"
   },
   {
-    "name": "longer name is not a tag",
+    "name": "longer name is a tag too (no word boundary)",
     "input": "<welcome_cards>",
-    "expected": "<welcome_cards>"
+    "expected": "&lt;welcome_cards>"
   },
   {
     "name": "lone < at end",
@@ -245,12 +290,12 @@
     "expected": "a <"
   },
   {
-    "name": "JS \\b is ASCII: a non-ASCII letter after the name ends the word",
+    "name": "a non-ASCII letter after the name: still a tag",
     "input": "<turn_contexté>",
     "expected": "&lt;turn_contexté>"
   },
   {
-    "name": "JS \\b is ASCII: an Arabic-Indic digit after the name ends the word",
+    "name": "an Arabic-Indic digit after the name: still a tag",
     "input": "</user_memory٣>",
     "expected": "&lt;/user_memory٣>"
   },

@@ -42,7 +42,6 @@ import {
   buildSystemPrompt,
   buildTurnContextBlocks,
   drawsGuueyA2ui,
-  escapeTurnData,
   promptClassOf,
   renderFirstImpressionSection,
   renderFirstImpressionShownSection,
@@ -57,6 +56,7 @@ import {
   type PromptClassSource,
   type TurnContextData,
 } from "../preamble.js";
+import { CONTEXT_ESCAPED_TAG_NAMES, escapeContextData } from "@guuey/worker";
 
 interface GoldenCase<I, E> {
   readonly name: string;
@@ -196,18 +196,9 @@ describe("the Python preamble's golden corpus (guuey#3494)", () => {
     );
   });
 
-  it("escape: escapeTurnData over every tag spelling, everyday text, and JavaScript's own whitespace, case and word rules", async () => {
-    const tags = [
-      "turn_context",
-      "turn_directive",
-      "conversation_history",
-      "thread_memory",
-      "working_state",
-      "user_memory",
-      "user_profile",
-      "first_impression_handshake",
-      "welcome_card",
-    ];
+  it("escape: the worker's escapeContextData over every tag spelling, everyday text, and JavaScript's own whitespace and case rules", async () => {
+    // The ONE list, imported: a tag added there lands in this corpus by itself, and the Python port must follow.
+    const tags: readonly string[] = CONTEXT_ESCAPED_TAG_NAMES;
     const inputs: { name: string; input: string }[] = [
       { name: "empty string", input: "" },
       { name: "plain text", input: "hello world" },
@@ -230,14 +221,14 @@ describe("the Python preamble's golden corpus (guuey#3494)", () => {
       { name: "double < escapes only the tag's", input: "<<turn_context>" },
       { name: "two slashes is not a tag", input: "<//turn_context>" },
       { name: "slash then space then slash is not a tag", input: "< / /turn_context>" },
-      { name: "name at end of input is a tag (\\b at end)", input: "text <turn_context" },
+      { name: "name at end of input is a tag", input: "text <turn_context" },
       { name: "name then hyphen is a tag", input: "<turn_context-x>" },
-      { name: "name then digit is not a tag", input: "<turn_context2>" },
-      { name: "name then underscore is not a tag", input: "<user_memory_>" },
-      { name: "longer name is not a tag", input: "<welcome_cards>" },
+      { name: "name then digit is a tag too (no word boundary)", input: "<turn_context2>" },
+      { name: "name then underscore is a tag too (no word boundary)", input: "<user_memory_>" },
+      { name: "longer name is a tag too (no word boundary)", input: "<welcome_cards>" },
       { name: "lone < at end", input: "a <" },
-      { name: "JS \\b is ASCII: a non-ASCII letter after the name ends the word", input: "<turn_contexté>" },
-      { name: "JS \\b is ASCII: an Arabic-Indic digit after the name ends the word", input: "</user_memory٣>" },
+      { name: "a non-ASCII letter after the name: still a tag", input: "<turn_contexté>" },
+      { name: "an Arabic-Indic digit after the name: still a tag", input: "</user_memory٣>" },
       { name: "JS \\s takes NBSP", input: "< turn_context>" },
       { name: "JS \\s takes BOM", input: "<﻿/turn_context>" },
       { name: "JS \\s takes U+2028 and U+3000", input: "<　/ turn_directive>" },
@@ -253,7 +244,7 @@ describe("the Python preamble's golden corpus (guuey#3494)", () => {
       { name: "long whitespace run with no tag", input: "<" + " \t".repeat(500) + "x" },
       { name: "astral and lone surrogates around a tag", input: "\u{1F600}<turn_context>\uD800</turn_context>\uDC00" },
     ];
-    await writeGolden("escape", casesOf(inputs, escapeTurnData));
+    await writeGolden("escape", casesOf(inputs, escapeContextData));
   });
 
   it("sections: each renderer called on its own", async () => {

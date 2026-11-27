@@ -20,8 +20,9 @@
  *    why). `<turn_directive>` is empty (`<turn_directive></turn_directive>`)
  *    when there is no order.
  *
- * Every data string a block frames goes through {@link escapeTurnData} first,
- * so data can never close a block early.
+ * Every data string a block frames goes through `@guuey/worker`'s
+ * `escapeContextData` first (the ONE tag list, `CONTEXT_ESCAPED_TAG_NAMES`), so
+ * data can never close a block early or open a context frame.
  *
  * The rendered text is measured by the guuey monorepo's preamble gate: a change
  * to what the model reads needs a fresh gate receipt in the same commit. A
@@ -38,7 +39,7 @@ import type {
   ProfileSection,
 } from "@guuey/worker";
 import type { ProfileAccess } from "@guuey/config";
-import { modelTextOf } from "@guuey/worker";
+import { escapeContextData, modelTextOf } from "@guuey/worker";
 
 /**
  * The prior-context sections (conversation history, thread memory, working
@@ -57,7 +58,7 @@ function priorContextSections(turn: TurnContextData): string[] {
         "Prior conversation with this user, for context. Continue naturally;",
         "do not repeat it back verbatim.",
         "<conversation_history>",
-        ...history.map((m) => `${roleLabel(m.role)}: ${escapeTurnData(modelTextOf(m))}`),
+        ...history.map((m) => `${roleLabel(m.role)}: ${escapeContextData(modelTextOf(m))}`),
         "</conversation_history>",
       ].join("\n"),
     );
@@ -68,7 +69,7 @@ function priorContextSections(turn: TurnContextData): string[] {
       [
         "Facts you previously recorded for this thread. Treat as known.",
         "<thread_memory>",
-        ...priorMemory.map((m) => escapeTurnData(`${m.key ?? "(unkeyed)"}: ${JSON.stringify(m.value)}`)),
+        ...priorMemory.map((m) => escapeContextData(`${m.key ?? "(unkeyed)"}: ${JSON.stringify(m.value)}`)),
         "</thread_memory>",
       ].join("\n"),
     );
@@ -79,7 +80,7 @@ function priorContextSections(turn: TurnContextData): string[] {
       [
         "Your working state carried from the previous turn.",
         "<working_state>",
-        escapeTurnData(JSON.stringify(priorState, null, 2)),
+        escapeContextData(JSON.stringify(priorState, null, 2)),
         "</working_state>",
       ].join("\n"),
     );
@@ -738,55 +739,13 @@ export function buildSystemPrompt(agentPrompt: string, cls: SystemPromptClass): 
   );
 }
 
-/**
- * The `<` of every tag {@link escapeTurnData} neutralises: the OPENER or the
- * CLOSER of any of the nine tags the turn blocks use (the two block tags
- * `turn_context` and `turn_directive`, and the seven inner data tags
- * `conversation_history`, `thread_memory`, `working_state`, `user_memory`,
- * `user_profile`, `first_impression_handshake`, `welcome_card`). Matched
- * case-insensitively and tolerant of the spellings a model may still read as
- * the tag: `<`, optional whitespace, an optional `/` (with optional whitespace
- * after it), then the name as a whole word, whatever follows
- * (`</turn_context >`, `</TURN_CONTEXT>`, `<turn_directive\n>`,
- * `<turn_directive x="y">`, `< /turn_context>`, `</ USER_MEMORY>`,
- * `< welcome_card attr="x">`). A longer name (`<turn_contextual>`,
- * `</turn_directives>`, `<user_memory_note>`) is not a tag and passes through.
- * The optional `/` is written `(?:\/\s*)?` rather than `\/?\s*` so no two
- * adjacent quantifiers share a whitespace run: a `<` followed by a long run of
- * whitespace scans it once, never quadratically.
- */
-export const TURN_DATA_TAG_NAMES = [
-  "turn_context",
-  "turn_directive",
-  "conversation_history",
-  "thread_memory",
-  "working_state",
-  "user_memory",
-  "user_profile",
-  "first_impression_handshake",
-  "welcome_card",
-] as const;
-const TURN_DATA_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${TURN_DATA_TAG_NAMES.join("|")})\\b)`, "gi");
-
-/**
- * Neutralise, in a data string about to be framed inside a turn block, every
- * tag that could end or forge a block early: the opener or closer of the two
- * block tags (`<turn_context>`, `</turn_context>`, `<turn_directive>`,
- * `</turn_directive>`) and of the seven inner data tags, in any case and with
- * stray whitespace or attributes ({@link TURN_DATA_TAG}). The leading `<`
- * becomes `&lt;`; nothing else changes.
- */
-export function escapeTurnData(data: string): string {
-  return data.replace(TURN_DATA_TAG, "&lt;");
-}
-
-/** {@link escapeTurnData} over every string (keys included) of a JSON value. */
+/** {@link escapeContextData} over every string (keys included) of a JSON value. */
 function escapeJsonStrings(value: JsonValue): JsonValue {
-  if (typeof value === "string") return escapeTurnData(value);
+  if (typeof value === "string") return escapeContextData(value);
   if (Array.isArray(value)) return value.map(escapeJsonStrings);
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, inner]): [string, JsonValue] => [escapeTurnData(key), escapeJsonStrings(inner)]),
+      Object.entries(value).map(([key, inner]): [string, JsonValue] => [escapeContextData(key), escapeJsonStrings(inner)]),
     );
   }
   return value;
@@ -796,7 +755,7 @@ function escapedFirstImpression(fi: FirstImpressionPush | undefined): FirstImpre
   if (fi === undefined) return undefined;
   return {
     ...fi,
-    intent: escapeTurnData(fi.intent),
+    intent: escapeContextData(fi.intent),
     contract: escapeJsonStrings(fi.contract),
     ...(fi.variance !== undefined ? { variance: escapeJsonStrings(fi.variance) } : {}),
   };
@@ -805,9 +764,9 @@ function escapedFirstImpression(fi: FirstImpressionPush | undefined): FirstImpre
 function escapedWelcomeCard(shown: FirstImpressionShown | undefined): FirstImpressionShown | undefined {
   if (shown === undefined) return undefined;
   return {
-    heading: escapeTurnData(shown.heading),
-    message: escapeTurnData(shown.message),
-    options: shown.options.map(escapeTurnData),
+    heading: escapeContextData(shown.heading),
+    message: escapeContextData(shown.message),
+    options: shown.options.map(escapeContextData),
   };
 }
 
@@ -840,7 +799,7 @@ function frameTurnBlock(tag: string, sections: string, lead?: string): string {
  *  2. one `<turn_directive>` block: the first-impression push (ggui rail
  *     armed, tools declared) and the welcome card already on screen;
  *     `<turn_directive></turn_directive>` on a turn with no order.
- * Every data string is escaped ({@link escapeTurnData}) before it is framed.
+ * Every data string is escaped ({@link escapeContextData}) before it is framed.
  */
 export function buildTurnContextBlocks(turn: TurnContextData, cls: PromptClass): string[] {
   const signedIn = cls.authMode === "authenticated";
@@ -848,13 +807,13 @@ export function buildTurnContextBlocks(turn: TurnContextData, cls: PromptClass):
   const sections = turn.profileSections;
   const context =
     priorContextSections(turn).join("\n\n") +
-    (signedIn && cls.memoryAttached && userMemory ? renderUserMemoryRecall(escapeTurnData(userMemory)) : "") +
+    (signedIn && cls.memoryAttached && userMemory ? renderUserMemoryRecall(escapeContextData(userMemory)) : "") +
     (signedIn && cls.profileAccess !== undefined && sections !== undefined && sections.length > 0
-      ? renderProfileRecall(sections.map((s) => ({ app: escapeTurnData(s.app), content: escapeTurnData(s.content) })))
+      ? renderProfileRecall(sections.map((s) => ({ app: escapeContextData(s.app), content: escapeContextData(s.content) })))
       : "") +
     // `state` is the closed `McpAvailability["state"]` enum, never free text,
     // which is why only `server` is escaped.
-    renderMcpAvailabilitySection(turn.mcpAvailability?.map((a) => ({ server: escapeTurnData(a.server), state: a.state })));
+    renderMcpAvailabilitySection(turn.mcpAvailability?.map((a) => ({ server: escapeContextData(a.server), state: a.state })));
   const directive =
     (cls.gguiAttached && !cls.noTools ? renderFirstImpressionSection(escapedFirstImpression(turn.firstImpression)) : "") +
     renderFirstImpressionShownSection(escapedWelcomeCard(turn.firstImpressionShown));

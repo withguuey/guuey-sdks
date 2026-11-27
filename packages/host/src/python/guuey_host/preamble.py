@@ -21,7 +21,7 @@ The JavaScript behaviours this module reproduces on purpose (each is named again
    (_json_stringify, _json_quote, _js_number_to_string, _js_own_keys).
  - JavaScript's whitespace set, for String.prototype.trim and the regex \\s (_JS_WHITESPACE), which differs from
    Python's str.isspace and re's \\s.
- - A non-unicode /i regex with an ASCII \\b (_TURN_DATA_TAG), which differs from re.IGNORECASE and re's \\b.
+ - A non-unicode /i regex (_TURN_DATA_TAG), which differs from re.IGNORECASE, with no word boundary after the name.
  - Iteration by code point (for ... of) in the provenance-name sanitizer.
 """
 
@@ -663,7 +663,11 @@ def build_system_prompt(agent_prompt: str, cls: PromptClass) -> str:
     )
 
 
+# @guuey/worker's CONTEXT_ESCAPED_TAG_NAMES, the ONE list, in its order (the preamble goldens pin this copy to it).
 _TURN_DATA_TAG_NAMES: Final = (
+    "message_context",
+    "session_context",
+    "message_files",
     "turn_context",
     "turn_directive",
     "conversation_history",
@@ -682,9 +686,9 @@ def _ascii_case_insensitive(name: str) -> str:
     return "".join(f"[{c.lower()}{c.upper()}]" if c.isascii() and c.isalpha() else re.escape(c) for c in name)
 
 
-# The `<` of every opener or closer of the nine turn tags: `<`, optional JS whitespace, an optional `/` with optional
-# JS whitespace after it, then the name as a whole word. JavaScript's \b (no u flag) is ASCII-only, so it is written
-# (?![A-Za-z0-9_]): `<turn_contexté>` IS a tag there (Python's unicode \b would say not).
+# The `<` of every opener or closer of the twelve tags: `<`, optional JS whitespace, an optional `/` with optional JS
+# whitespace after it, then the name. No word boundary after it, on purpose (escape more, never less): a prefix form
+# such as `<message_contexts` or `<turn_context2>` is escaped too, as @guuey/worker's escapeContextData does.
 _TURN_DATA_TAG: Final = re.compile(
     "<(?="
     + _JS_WHITESPACE_CLASS
@@ -692,12 +696,12 @@ _TURN_DATA_TAG: Final = re.compile(
     + _JS_WHITESPACE_CLASS
     + "*)?(?:"
     + "|".join(_ascii_case_insensitive(name) for name in _TURN_DATA_TAG_NAMES)
-    + ")(?![A-Za-z0-9_]))"
+    + "))"
 )
 
 
 def escape_turn_data(data: str) -> str:
-    """Neutralise every tag that could end or forge a turn block early: its leading `<` becomes `&lt;`."""
+    """Neutralise every tag that could end or forge a turn block or a context frame: its leading `<` becomes `&lt;`."""
     return _TURN_DATA_TAG.sub("&lt;", data)
 
 

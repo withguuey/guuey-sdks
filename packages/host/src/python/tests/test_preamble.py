@@ -92,7 +92,7 @@ RUNNERS: dict[str, Callable] = {
 # purpose.
 MIN_CASES: dict[str, int] = {
     "constants": 17,
-    "escape": 65,
+    "escape": 74,
     "sections": 55,
     "system-prompt": 62,
     "prompt-class": 24,
