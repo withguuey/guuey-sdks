@@ -183,7 +183,6 @@ export {
   checkSessionContext,
   contextCapabilities,
   CONVERSATION_HISTORY_TAG,
-  escapeHistoryText,
   contextFramesOf,
   escapeContextData,
   escapeOwnText,

@@ -41,11 +41,15 @@ export const SESSION_CONTEXT_LEAD =
 export const SESSION_CONTEXT_CLEARED_TEXT =
   "The app removed this conversation's session context. Disregard every earlier session_context block.";
 
+/** The tag of `withHistory`'s fold of the earlier turns (model-text.ts). */
+export const CONVERSATION_HISTORY_TAG = "conversation_history";
+
 /**
- * The names {@link escapeContextData} neutralises: the two context tags, and the platform's turn-block tags
- * (`@guuey/host`'s `TURN_DATA_TAG_NAMES`; `preamble.test.ts` there checks every one of its names is in this list). Case-insensitive, tolerant of `< /tag`, `</ tag >` and attributes; a longer name
- * (`<message_contextual>`) is not a tag and passes through. The `/` is `(?:\/\s*)?` so a long whitespace run after a
- * `<` is scanned once, never quadratically.
+ * The ONE list of tags that end-user or app data may never open or close: the two context frames, the files note, and
+ * the platform's turn-block tags (the history fold among them). {@link escapeContextData} neutralises all of them, and `@guuey/host` imports this list for its own turn data, so a tag is added in one place.
+ * Case-insensitive, tolerant of `< /tag`, `</ tag >` and attributes. No word boundary after the name, on purpose
+ * (escape more, never less): a prefix form such as `<message_contexts` is escaped too, so no "almost a tag" survives.
+ * The `/` is `(?:\/\s*)?` so a long whitespace run after a `<` is scanned once, never quadratically.
  */
 export const CONTEXT_ESCAPED_TAG_NAMES = [
   MESSAGE_CONTEXT_TAG,
@@ -53,7 +57,7 @@ export const CONTEXT_ESCAPED_TAG_NAMES = [
   MESSAGE_FILES_TAG,
   "turn_context",
   "turn_directive",
-  "conversation_history",
+  CONVERSATION_HISTORY_TAG,
   "thread_memory",
   "working_state",
   "user_memory",
@@ -61,27 +65,16 @@ export const CONTEXT_ESCAPED_TAG_NAMES = [
   "first_impression_handshake",
   "welcome_card",
 ] as const;
-const CONTEXT_DATA_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${CONTEXT_ESCAPED_TAG_NAMES.join("|")})\\b)`, "gi");
+const CONTEXT_DATA_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${CONTEXT_ESCAPED_TAG_NAMES.join("|")}))`, "gi");
 /** The `<` of the three frame tags alone (the two contexts and the files note): what {@link escapeOwnText} neutralises in the turn's own text. */
-const CONTEXT_FRAME_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${[MESSAGE_CONTEXT_TAG, SESSION_CONTEXT_TAG, MESSAGE_FILES_TAG].join("|")})\\b)`, "gi");
+const CONTEXT_FRAME_TAG = new RegExp(`<(?=\\s*(?:\\/\\s*)?(?:${[MESSAGE_CONTEXT_TAG, SESSION_CONTEXT_TAG, MESSAGE_FILES_TAG].join("|")}))`, "gi");
 
-/** The tag of `withHistory`'s fold of the earlier turns (model-text.ts). */
-export const CONVERSATION_HISTORY_TAG = "conversation_history";
-/** The `<` of every frame tag a worker emits around end-user text: the three frames and the history fold. */
-const HISTORY_FRAME_TAG = new RegExp(
-  `<(?=\\s*(?:\\/\\s*)?(?:${[MESSAGE_CONTEXT_TAG, SESSION_CONTEXT_TAG, MESSAGE_FILES_TAG, CONVERSATION_HISTORY_TAG].join("|")})\\b)`,
-  "gi",
-);
 /**
- * Neutralise, in one earlier turn's text (or the turn's own text) about to be folded into `<conversation_history>`,
- * every frame tag the worker emits: the three frames and the fold's own tag. Rows keep the clean text; the escape
- * happens here, at framing, so a stored turn can never close the fold or open a frame the next time it is folded.
+ * Neutralise, in data about to be framed or folded, every tag in {@link CONTEXT_ESCAPED_TAG_NAMES}: its `<` becomes
+ * `&lt;`. The frames' data and the history fold's turns (model-text.ts) both pass through it. Rows keep the text as the
+ * person wrote it; the escape happens here, at the model boundary, so a stored turn can never close the fold or open a
+ * frame the next time it is folded.
  */
-export function escapeHistoryText(text: string): string {
-  return text.replace(HISTORY_FRAME_TAG, "&lt;");
-}
-
-/** Neutralise, in data about to be framed, every tag that could end or forge a frame: its `<` becomes `&lt;`. */
 export function escapeContextData(data: string): string {
   return data.replace(CONTEXT_DATA_TAG, "&lt;");
 }

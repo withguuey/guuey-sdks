@@ -13,7 +13,7 @@
  * on its hello, and only then.
  */
 import { inputKindCapability, type InputKind, type Invoke } from "./protocol.js";
-import { escapeHistoryText } from "./turn-context.js";
+import { escapeContextData } from "./turn-context.js";
 
 /** The model-only sentence for a context-only turn. Versioned with this package; never persisted. */
 export const CONTEXT_ONLY_TURN_TEXT =
@@ -58,7 +58,7 @@ export function withHistory(invoke: Pick<Invoke, "input" | "inputKind" | "histor
   // Each earlier turn's text, and this turn's, escaped against every frame tag before the fold wraps them (B7: the
   // history fold is an end-user channel), so the fold always has exactly its own one open and one close tag.
   const lines = invoke.history.map(
-    (h) => `${h.role === "agent" ? "Assistant" : "User"}: ${escapeHistoryText(modelTextOf(h))}`,
+    (h) => `${h.role === "agent" ? "Assistant" : "User"}: ${escapeContextData(modelTextOf(h))}`,
   );
-  return `<conversation_history>\n${lines.join("\n")}\n</conversation_history>\n\n${escapeHistoryText(input)}`;
+  return `<conversation_history>\n${lines.join("\n")}\n</conversation_history>\n\n${escapeContextData(input)}`;
 }
