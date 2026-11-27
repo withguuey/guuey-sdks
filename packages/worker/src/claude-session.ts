@@ -162,6 +162,27 @@ export function applyClaudeSession(turn: ClaudeSessionTurn): AppliedClaudeSessio
  */
 export const CLAUDE_CLI_CONFIG_DIR_ENV = "GUUEY_CLI_CONFIG_DIR";
 
+/** The platform's CLI config root, or why there is none. The ONE reader of {@link CLAUDE_CLI_CONFIG_DIR_ENV}. */
+function cliConfigRootOf(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly ok: true; readonly dir: string } | { readonly ok: false; readonly why: string } {
+  const dir = env[CLAUDE_CLI_CONFIG_DIR_ENV];
+  if (dir === undefined || dir === "") return { ok: false, why: `${CLAUDE_CLI_CONFIG_DIR_ENV} is not set` };
+  if (!isAbsolute(dir)) return { ok: false, why: `${CLAUDE_CLI_CONFIG_DIR_ENV} is not an absolute path` };
+  return { ok: true, dir };
+}
+
+/**
+ * The Claude CLI's config root as the CLI reads it, for EVERY turn: `{ CLAUDE_CONFIG_DIR }` when the platform set
+ * {@link CLAUDE_CLI_CONFIG_DIR_ENV} to an absolute path, else `{}`. Spread it into the CLI's `env` after the process's
+ * own variables and before an applied session's `env` (which names the same root). Without it, a turn that applies no
+ * session leaves the CLI's state in `$HOME/.claude`, and hosted, `$HOME` is the end user's durable home.
+ */
+export function claudeCliConfigEnv(env: Readonly<Record<string, string | undefined>>): { CLAUDE_CONFIG_DIR?: string } {
+  const root = cliConfigRootOf(env);
+  return root.ok ? { CLAUDE_CONFIG_DIR: root.dir } : {};
+}
+
 /** Where a builder worker's resumable turn runs, or why it runs without a session. Reads only `env`. */
 export type WorkerClaudeSessionGate =
   | { readonly ok: true; readonly configDir: string; readonly executable: string }
@@ -173,9 +194,9 @@ export type WorkerClaudeSessionGate =
  * the turn must run that one, never another.
  */
 export function workerClaudeSessionGate(env: Readonly<Record<string, string | undefined>>): WorkerClaudeSessionGate {
-  const configDir = env[CLAUDE_CLI_CONFIG_DIR_ENV];
-  if (configDir === undefined || configDir === "") return { ok: false, why: `${CLAUDE_CLI_CONFIG_DIR_ENV} is not set` };
-  if (!isAbsolute(configDir)) return { ok: false, why: `${CLAUDE_CLI_CONFIG_DIR_ENV} is not an absolute path` };
+  const root = cliConfigRootOf(env);
+  if (!root.ok) return root;
+  const configDir = root.dir;
   const executable = claudeCodeExecutableOf(env);
   if (executable === undefined) return { ok: false, why: `${CLAUDE_CODE_EXECUTABLE_ENV} is not set` };
   return { ok: true, configDir, executable };

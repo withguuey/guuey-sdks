@@ -319,6 +319,67 @@ describe("runClaudeTurn: the MCP startup", () => {
   });
 });
 
+describe("runClaudeTurn: the platform's CLI config root on every turn", () => {
+  const ROOT = "/tmp/guuey-cli/config";
+  const XDG = { XDG_CACHE_HOME: "/tmp/xdg/cache", XDG_CONFIG_HOME: "/tmp/xdg/config", XDG_DATA_HOME: "/tmp/xdg/data", XDG_STATE_HOME: "/tmp/xdg/state" };
+  const { env: _appEnv, spawnClaudeCodeProcess: _appSpawner, ...noEnvNoSpawner } = APP_OPTIONS;
+
+  it("a turn with no session: the CLI gets the platform's root, and the slot's XDG roots reach it", async () => {
+    vi.stubEnv("GUUEY_CLI_CONFIG_DIR", ROOT);
+    for (const [name, value] of Object.entries(XDG)) vi.stubEnv(name, value);
+    try {
+      const run = fakeQuery({ before: [INIT] });
+      const { emit } = fakeEmit("none");
+      await runClaudeTurn({ query: run.query, invoke: START, emit, systemPrompt: "p", servers: SERVERS, options: noEnvNoSpawner });
+      expect(run.calls[0]?.options?.env).toMatchObject({ ...XDG, CLAUDE_CONFIG_DIR: ROOT });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("RED twin: a turn with no session never leaves the CLI's state in $HOME/.claude (the root is set, and no transcript persists)", async () => {
+    vi.stubEnv("HOME", "/home/person");
+    vi.stubEnv("GUUEY_CLI_CONFIG_DIR", ROOT);
+    try {
+      const run = fakeQuery({ before: [INIT] });
+      const { emit } = fakeEmit("none");
+      await runClaudeTurn({ query: run.query, invoke: START, emit, systemPrompt: "p", servers: SERVERS, options: APP_OPTIONS });
+      const o = run.calls[0]?.options;
+      // The app's own env is kept, and the platform's root rides on top of it: the CLI never falls back to $HOME/.claude.
+      expect(o?.env).toEqual({ APP_VAR: "kept", CLAUDE_CONFIG_DIR: ROOT });
+      expect(o?.env?.CLAUDE_CONFIG_DIR).not.toBe("/home/person/.claude");
+      expect(o?.persistSession).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("without the platform's root, the CLI gets no CLAUDE_CONFIG_DIR", async () => {
+    vi.stubEnv("GUUEY_CLI_CONFIG_DIR", "");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "");
+    try {
+      const run = fakeQuery({ before: [INIT] });
+      const { emit } = fakeEmit("none");
+      await runClaudeTurn({ query: run.query, invoke: START, emit, systemPrompt: "p", servers: SERVERS, options: APP_OPTIONS });
+      expect(run.calls[0]?.options?.env).toEqual({ APP_VAR: "kept" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("an applied session's root wins over the platform's variable: the CLI gets one root", async () => {
+    vi.stubEnv("GUUEY_CLI_CONFIG_DIR", ROOT);
+    try {
+      const run = fakeQuery({ before: [INIT] });
+      const { emit } = fakeEmit(appliedSession("start"));
+      await runClaudeTurn({ query: run.query, invoke: STARTED, emit, systemPrompt: "p", servers: SERVERS, options: APP_OPTIONS });
+      expect(run.calls[0]?.options?.env?.CLAUDE_CONFIG_DIR).toBe("/platform/cli-config");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("runClaudeTurn: the credential and the env", () => {
   const { env: _appEnv, spawnClaudeCodeProcess: _appSpawner, ...noEnvNoSpawner } = APP_OPTIONS;
 

@@ -1,5 +1,5 @@
 import type { ClaudeSessionHeader, ClaudeSessionServer } from "./claude-session-block.js";
-import { cliSessionNotAppliedMessage, type ClaudeSessionMessage, type WorkerClaudeSession } from "./claude-session.js";
+import { claudeCliConfigEnv, cliSessionNotAppliedMessage, type ClaudeSessionMessage, type WorkerClaudeSession } from "./claude-session.js";
 import { CLAUDE_FORBIDDEN_ENV, makeClaudeSpawner, type ClaudeKeyKind } from "./claude-spawn.js";
 import { anthropicUserContent, type AnthropicUserBlock } from "./image-parts.js";
 import { modelInputOf, withHistory } from "./model-text.js";
@@ -166,7 +166,8 @@ function nativeOf(message: ClaudeTurnMessage): JsonValue {
  *
  * `query()` gets, in this order (a later one wins): the app's `options`; then the spawner built from `credential`;
  * then `persistSession: false` (without a platform session, each turn's thread arrives in `invoke.history`, and a
- * persisted transcript would land in the end user's durable home) and the env (the app's, else {@link cliEnv}'s); then, ONLY when a session applied, the session's own: its `env`
+ * persisted transcript would land in the end user's durable home) and the env (the app's, else {@link cliEnv}'s, then
+ * the platform's CLI config root from {@link claudeCliConfigEnv} on every turn); then, ONLY when a session applied, the session's own: its `env`
  * (CLAUDE_CONFIG_DIR, over the app's env), and its options: the session id or resume id, `persistSession: true`, and
  * `pathToClaudeCodeExecutable` = the platform's pinned CLI, which wins over the app's own path because the session file
  * belongs to that binary.
@@ -221,7 +222,10 @@ export async function runClaudeTurn<O extends ClaudeTurnOwnOptions>(turn: Claude
           }
         : {}),
       persistSession: false,
-      env: { ...(options.env ?? cliEnv()), ...session?.env },
+      // The platform's CLI config root on EVERY turn (claudeCliConfigEnv), not only a session's: a turn without one would
+      // otherwise leave the CLI's state in $HOME/.claude, the end user's durable home when hosted. A session's own env names
+      // the same root and wins.
+      env: { ...(options.env ?? cliEnv()), ...claudeCliConfigEnv(process.env), ...session?.env },
       ...session?.options,
     },
   });

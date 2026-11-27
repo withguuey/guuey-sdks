@@ -113,6 +113,9 @@ beforeAll(async () => {
   vi.stubEnv("GUUEY_AGENT_SNAPSHOT", JSON.stringify(agent));
   vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "legacy-env-token");
   vi.stubEnv("NODE_OPTIONS", "--max-old-space-size=64");
+  // The CLI's env starts from this process's own, so a CLAUDE_CONFIG_DIR in the shell that runs the tests would reach
+  // query() and decide the config-root asserts. Hermetic: only the platform's root or a session's may set it here.
+  vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
   vi.spyOn(console, "log").mockImplementation(() => {});
   await import(WORKER_ENTRY);
 });

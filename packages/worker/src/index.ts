@@ -116,6 +116,7 @@ export {
   CLI_SESSION_ID_NOT_UUID,
   CLI_SESSION_PROMPT_NOT_STRING,
   applyClaudeSession,
+  claudeCliConfigEnv,
   cliSessionFailureKindOf,
   cliSessionIdProblem,
   cliSessionNotAppliedMessage,

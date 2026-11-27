@@ -41,6 +41,7 @@ const {
   cliSessionNotAppliedMessage,
   cliSessionUnconfirmedMessage,
   workerClaudeSessionGate,
+  claudeCliConfigEnv,
   CLAUDE_CLI_CONFIG_DIR_ENV,
   CLI_SESSION_ID_NOT_UUID,
   CLI_SESSION_PROMPT_NOT_STRING,
@@ -203,6 +204,16 @@ describe("the block equals the host's canonical form", () => {
     expect(block.headerShas.tools).toBe(sha256OfFields(["tools", "allowed", "disallowed"]));
     expect(block.headerShas.permissionMode).toBe(sha256OfFields(["permissionMode", "bypassPermissions"]));
     expect(block.headerShas.mcpConfig).toBe(sha256OfFields(["mcp"]));
+  });
+});
+
+describe("claudeCliConfigEnv: the CLI's config root on every turn", () => {
+  it("set to an absolute path: CLAUDE_CONFIG_DIR, with no pinned binary needed", () => {
+    expect(claudeCliConfigEnv({ [CLAUDE_CLI_CONFIG_DIR_ENV]: "/tmp/guuey-cli/config" })).toEqual({ CLAUDE_CONFIG_DIR: "/tmp/guuey-cli/config" });
+  });
+
+  it.each([[{}], [{ [CLAUDE_CLI_CONFIG_DIR_ENV]: "" }], [{ [CLAUDE_CLI_CONFIG_DIR_ENV]: "home/.claude" }]])("%j: nothing is set", (env) => {
+    expect(claudeCliConfigEnv(env)).toEqual({});
   });
 });
 
