@@ -25,6 +25,9 @@ platform's pinned versions; in graceful mode, _your_ project's copy wins).
 | `openai-agents-sdk` | OpenAI Agents loop                                  | `@openai/agents`                 |
 | `google-adk`        | official Google ADK (`LlmAgent` + `InMemoryRunner`) | `@google/adk`                    |
 
+Each turn's session context, turn context and attached files reach the model through `@guuey/worker`'s content
+helpers, so a host-run agent gets them with no code of its own.
+
 ## Graceful mode
 
 If `guuey.json#agent.entry` names a module, the host imports it and runs
