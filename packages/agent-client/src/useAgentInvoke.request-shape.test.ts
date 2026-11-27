@@ -428,4 +428,30 @@ describe("useAgentInvoke — parts in shape 2: the runtime's acknowledgement is 
     expect(bodies[2]).toEqual({ input: "which plan?", clientMessageId: "cmid-2", turnContext });
     unmount();
   });
+
+  it("a context the server would refuse is never sent: nothing on the wire, TURN_CONTEXT_INVALID with the rule", async () => {
+    const { adapters, bodies } = podAdapters([ANSWER]);
+    const { result, unmount } = hook(adapters);
+    const tooMany = Array.from({ length: 33 }, () => ({ type: "text" as const, text: "a" }));
+    await act(async () => {
+      await result.current.send("which plan?", { turnContext: tooMany });
+    });
+    expect(bodies).toEqual([]);
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.errorCode).toBe(CLIENT_ERROR_CODES.TURN_CONTEXT_INVALID);
+    expect(result.current.error).toMatch(/32 blocks/);
+    unmount();
+  });
+
+  it("an empty context is the same as none: the turn goes, with no run.context", async () => {
+    const { adapters, bodies } = podAdapters([ANSWER]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("which plan?", { turnContext: [] });
+    });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toHaveProperty("run");
+    expect(result.current.errorCode).toBeNull();
+    unmount();
+  });
 });

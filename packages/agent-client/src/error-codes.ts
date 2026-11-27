@@ -230,6 +230,12 @@ export const CLIENT_ERROR_CODES = {
    */
   PARTS_UNSUPPORTED: "PARTS_UNSUPPORTED",
   /**
+   * The send carried a turn context the server would refuse: more than `TURN_CONTEXT_MAX_BLOCKS` blocks, a block that
+   * is not `{ type: "text", text }`, a text that is not a string, or more than `TURN_CONTEXT_MAX_BYTES` bytes in all.
+   * Nothing was sent; `error` names the rule. The host can judge a list before sending (`validateTurnContext`).
+   */
+  TURN_CONTEXT_INVALID: "TURN_CONTEXT_INVALID",
+  /**
    * A turn without text (guuey#2549, `SendOptions.inputKind`) was refused by
    * the agent's runtime before it started: the agent does not take such a turn
    * here, or not yet (an agent with its own code takes one only after it has

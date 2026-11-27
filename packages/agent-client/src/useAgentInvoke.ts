@@ -45,6 +45,7 @@ import {
   type UserPartRefusal,
 } from "./user-parts.js";
 import { type InputKind, isInputKindRefusal } from "./input-kinds.js";
+import { describeTurnContextRefusal, validateTurnContext } from "./turn-context.js";
 import type {
   AgentInvokeAdapters,
   AgentInvokeStatus,
@@ -797,6 +798,18 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         return;
       }
       const parts: readonly UserPart[] = partsVerdict.parts;
+      // The turn's context is judged here too, on the server's counts and shape (its sanitiser is the authority): a list
+      // it would refuse is never sent. An empty list is the same as none.
+      const turnContextCandidate = sendOpts?.turnContext;
+      if (turnContextCandidate !== undefined && turnContextCandidate.length > 0) {
+        const contextVerdict = validateTurnContext(turnContextCandidate);
+        if (!contextVerdict.ok) {
+          setError(describeTurnContextRefusal(contextVerdict.refusal));
+          setErrorCode(CLIENT_ERROR_CODES.TURN_CONTEXT_INVALID);
+          markRefused();
+          return;
+        }
+      }
       // Shape 1 carries attached images only, so a turn that goes as shape 1
       // with any other part is refused rather than sent without it.
       let attachments: readonly TurnAttachment[] = [];

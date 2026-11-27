@@ -118,6 +118,15 @@ export {
   type UserPartsContext,
   type UserPartsVerdict,
 } from "./user-parts.js";
+// The turn-context caps, judged at send the way the server counts them (its sanitiser is the authority).
+export {
+  describeTurnContextRefusal,
+  TURN_CONTEXT_MAX_BLOCKS,
+  TURN_CONTEXT_MAX_BYTES,
+  validateTurnContext,
+  type TurnContextRefusal,
+  type TurnContextVerdict,
+} from "./turn-context.js";
 // The invoke body, request shape 2 (the silverprotocol `AgInput` start arm),
 // and the reader of an older runtime's refusal of it (W1).
 export {
