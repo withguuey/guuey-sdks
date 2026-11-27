@@ -93,6 +93,28 @@ through its class names (`.guuey-chat-header`, `-title`, `-actions`,
 Server-side (no hook, no DOM): assemble inputs from a persisted thread read
 with `transcriptInputsFromHistory` and plan/render anywhere Node runs.
 
+## Attachments and dictation in the built-in composer
+
+```tsx
+<GuueyChat parts={{ image: true, document: true }} … />  // attach, paste, preview, remove
+<GuueyChat voice … />                                     // a mic button: dictation into the field
+```
+
+- `parts` turns on one kind at a time (`image`, `audio`, `file`,
+  `document`), all off by default. The composer's picker suggests that
+  kind's types and takes pasted files, shows each as a preview (an image) or
+  by name with its own Remove button, and sends them inline with the turn.
+  A file over one part's room is refused, naming the cap it hit.
+- Which kinds an agent takes is its runtime's word: a turn whose parts the
+  runtime does not acknowledge ends before any reply, with
+  `strings.errorPartsUnsupported`. With every kind off, the composer and the
+  bodies it sends are as before.
+- **Upgrading from 0.37:** the `attachments` boolean is replaced by `parts`.
+  `attachments` becomes `parts={{ image: true }}`.
+- `voice` is dictation, not an audio upload: speech becomes text in the
+  field. It uses the browser's own speech service, so the app's privacy
+  policy must name that vendor before you turn it on.
+
 ## Owning the scroll (`follow`, `handleRef`, `onAtEndChange`, `jumpToLatest`)
 
 By default `<Transcript>` follows the stream while the reader is at the end. A host that wants

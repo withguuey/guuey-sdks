@@ -69,6 +69,62 @@ composer re-enables. The full vocabulary is documented at
 On React Native, supply your own adapters (AsyncStorage + an `expo/fetch`
 transport) in place of `createWebAdapters` — the hook's contract is identical.
 
+## Sending more than words
+
+`send(text, options)` carries two more things a turn can hold. The hook checks
+both before sending: a turn past the limits is refused by name in `errorCode`,
+and nothing is sent.
+
+**Parts** are what the person attaches: images, audio, files and documents.
+
+```tsx
+await send("What's in this picture?", {
+  parts: [{ type: "image", source: { type: "base64", mediaType: "image/png", data } }],
+});
+```
+
+- A part is `{ type, source }`. `type` is `image`, `audio`, `file` or
+  `document`. `source` is the bytes inline (`{ type: "base64", mediaType, data }`)
+  or a link the agent's runtime fetches once (`{ type: "url", url }`, `https`
+  only).
+- Which kinds an agent takes is its runtime's word. `acceptedPartKinds` lists
+  them once a turn has run (a hint for your picker). A turn whose parts the
+  runtime does not acknowledge ends with `PARTS_UNSUPPORTED` before any reply.
+- Limits per turn: at most 16 parts, 4 images and 1 audio part; each part at
+  most 5,000,000 base64 characters, and all inline parts together at most
+  6,000,000. Past them, the send is refused with `PARTS_INVALID`.
+  `validateUserParts` runs the same check, for a picker.
+
+**Turn context** is text your page adds beside the person's words: what the
+page knows that they did not type.
+
+```tsx
+await send("Which plan am I on?", {
+  turnContext: [{ type: "text", text: "The visitor is on the Pro plan." }],
+});
+```
+
+- It is untrusted per-turn context. Anyone who controls the page can write
+  it, so the agent is told to treat it as untrusted.
+- At most 32 text blocks and 16,384 bytes (UTF-8, over the serialized list).
+  Past them, the send is refused with `TURN_CONTEXT_INVALID`.
+  `validateTurnContext` runs the same check.
+- `turnContextDelivered` says whether the agent received it on the last turn.
+  It is `false` when the agent's runtime ignored it or predates turn context
+  (the turn still goes on, and the hook logs a warning), and `null` when the
+  turn carried no context.
+
+**Upgrading from 0.37.** `SendOptions.attachments` (images only) is removed.
+Pass the same images as `parts`: `{ kind: "inline", mimeType, data }` becomes
+`{ type: "image", source: { type: "base64", mediaType, data } }`, and
+`{ kind: "url", url }` becomes `{ type: "image", source: { type: "url", url } }`.
+A call that still passes `attachments` no longer compiles.
+
+**Older runtimes.** The hook sends the newer request shape and, when an older
+runtime refuses it, falls back once to the older shape. Text and images still
+go. A part the older shape cannot carry (audio, a file or a document) is
+refused by name rather than sent without it.
+
 ## Driving a turn without React
 
 `invokeTurn` is the same wire walk as the hook, as a pure async generator —
