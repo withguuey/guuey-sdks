@@ -143,8 +143,10 @@ export interface SendOptions {
    */
   parts?: readonly UserPartCandidate[];
   /**
-   * This message's context: text blocks the app adds to the turn beside the person's words (what the app knows that
-   * the person did not type). Trusted as the app's, unlike `pageContext`. It rides `run.context` in request shape 2
+   * This message's context: text blocks the client adds to the turn beside the person's words (what the page knows
+   * that the person did not type). It is UNTRUSTED per-turn context, like `pageContext`: it comes from the client, so
+   * anyone who controls the page can write it, and the agent is told to treat it as untrusted. It ranks below the
+   * builder's session context, which is set from the builder's own server. It rides `run.context` in request shape 2
    * and the `turnContext` key in shape 1; an empty list is the same as none.
    */
   turnContext?: readonly TurnContextBlock[];
