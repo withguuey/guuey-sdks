@@ -364,27 +364,42 @@ export interface Invoke {
    */
   sessionContext?: InvokeSessionContext;
   /**
-   * The person's message parts other than its text and images: audio, file and document, inline (the Router resolves
-   * a URL or a stored upload to bytes first), already judged by the Router. Images stay on {@link attachments}, so a
-   * worker that predates this field keeps its images. A worker built on `@guuey/worker`'s helpers delivers EVERY part
-   * (design v7 D1): the ones its framework takes natively as that framework's blocks, the rest as files in the turn's
-   * session storage named in ONE `<message_files>` note; it announces {@link PARTS_CAPABILITY} and the native kinds in
-   * its hello. An older worker ignores the field and announces nothing, and the Router answers that turn by name.
+   * The person's message blocks other than its text and images (images stay on {@link attachments}, so a worker that
+   * predates this field keeps its images): EVERY other kind the protocol admits, as the Router parsed it, never refused
+   * by kind. A worker built on `@guuey/worker`'s helpers delivers every part, never silently: the media kinds
+   * ({@link MEDIA_PART_TYPES}) natively where the model API takes them, otherwise as a stored file; the structured and
+   * agent-only kinds as stored JSON or text files; a link (`resource-link`, or a media part whose source is still a URL
+   * or an upload the Router has not resolved yet) as a line of ONE `<message_files>` note, never fetched. Each part's
+   * outcome rides the hello's `parts`. An older worker ignores the field and announces nothing.
    */
   parts?: InvokePart[];
 }
-/** The kinds {@link Invoke.parts} carries: the silverprotocol AgBlock media kinds other than image. */
-export const INVOKE_PART_TYPES = ["audio", "file", "document"] as const;
-export type InvokePartType = (typeof INVOKE_PART_TYPES)[number];
-/** An inline AgSource: the only source a worker receives (the Router resolves the others). */
-export type InlineSource = Extract<AgSource, { type: "base64" }>;
-/** One of {@link Invoke.parts}: an AgBlock of an {@link InvokePartType}, its source inline. */
-export type InvokePart = Extract<AgBlock, { type: InvokePartType }> & { source: InlineSource };
-/** The most parts one invoke carries. */
-export const TURN_PARTS_MAX = 4;
+/** The media kinds of {@link Invoke.parts}: the only ones a model API may take natively. */
+export const MEDIA_PART_TYPES = ["audio", "file", "document"] as const;
+export type MediaPartType = (typeof MEDIA_PART_TYPES)[number];
+/** The user-content kinds of {@link Invoke.parts} beyond media: delivered as a stored file or a note line. */
+export const STRUCTURED_PART_TYPES = ["resource", "resource-link", "data", "code", "search-result"] as const;
 /**
- * The largest part, in decoded bytes: the Router's shared inline room for a turn's media (6,000,000 base64
- * characters), checked here again.
+ * The kinds a person's message may carry that are NOT user content: delivered INERT, as a stored JSON file the note
+ * labels client-supplied, and NEVER as the framework's own block, whatever a hello declares.
+ */
+export const AGENT_ONLY_PART_TYPES = ["tool-call", "tool-result", "code-result", "reasoning", "compaction", "provider-raw"] as const;
+/** Every kind {@link Invoke.parts} carries: the protocol's block kinds other than `text` and `image`. */
+export const INVOKE_PART_TYPES = [...MEDIA_PART_TYPES, ...STRUCTURED_PART_TYPES, ...AGENT_ONLY_PART_TYPES] as const;
+export type InvokePartType = (typeof INVOKE_PART_TYPES)[number];
+/** An inline AgSource: the only source whose bytes a worker has. */
+export type InlineSource = Extract<AgSource, { type: "base64" }>;
+/** One of {@link Invoke.parts}: a silverprotocol AgBlock of any kind but `text` and `image`, its source as sent. */
+export type InvokePart = Exclude<AgBlock, { type: "text" | "image" }>;
+/** A media part ({@link MEDIA_PART_TYPES}). */
+export type MediaPart = Extract<InvokePart, { type: MediaPartType }>;
+/** A media part whose bytes are inline: the only kind of part a model API may take natively. */
+export type InlineMediaPart = MediaPart & { source: InlineSource };
+/** The most parts one invoke carries: the Router's one cross-kind count (images on `attachments` count there too). */
+export const TURN_PARTS_MAX = 16;
+/**
+ * The largest part, in decoded bytes, checked here again: at least the Router's own per-part cap, so the worker never
+ * refuses a part the Router admitted.
  */
 export const TURN_PART_MAX_BYTES = 4_500_000;
 /**
@@ -401,8 +416,8 @@ export const PART_STATES = ["native", "file", "file-unreadable"] as const;
 export type PartState = (typeof PART_STATES)[number];
 /** A {@link PartState} as a hello is READ: a state a later worker names that this release does not know is `unknown`. */
 export type HelloPartState = PartState | "unknown";
-/** The capability naming a part kind taken natively: `invoke.audio.v1`, `invoke.file.v1`, `invoke.document.v1`. */
-export function partCapability(kind: InvokePartType): string {
+/** The capability naming a media kind taken natively: `invoke.audio.v1`, `invoke.file.v1`, `invoke.document.v1`. */
+export function partCapability(kind: MediaPartType): string {
   return `invoke.${kind}.v1`;
 }
 /**

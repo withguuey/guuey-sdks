@@ -573,7 +573,7 @@ export function parseControl(line: string): ControlMessage {
         ...(turnContext?.ok && turnContext.value.length > 0 ? { turnContext: turnContext.value } : {}),
         // The conversation's session context, on a delivery turn only.
         ...(sessionContext?.ok ? { sessionContext: sessionContext.value } : {}),
-        // The message's audio, file and document parts: all well formed, or none (see parseInvokeParts).
+        // The message's parts (every block kind but text and image): all well formed, or none (see parseInvokeParts).
         ...(parts ? { parts } : {}),
       };
     }

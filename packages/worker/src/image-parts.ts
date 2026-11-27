@@ -14,7 +14,7 @@
  * always sent.
  */
 import { modelInputOf } from "./model-text.js";
-import type { Invoke, InvokeImageMimeType, InvokePart } from "./protocol.js";
+import type { InlineMediaPart, Invoke, InvokeImageMimeType } from "./protocol.js";
 import { contextFramesOf, escapeOwnText } from "./turn-context.js";
 import { frameTurnFiles, turnPartsDelivery, type PartsTarget } from "./turn-parts.js";
 
@@ -34,11 +34,11 @@ export interface PartsOptions {
 }
 
 /** The turn's parts for `target`: the native ones, and the ONE `<message_files>` note for the rest (if any). */
-function partsFor(turn: ImageTurn, target: PartsTarget, fileTools: boolean): { native: InvokePart[]; note: string | undefined } {
+function partsFor(turn: ImageTurn, target: PartsTarget, fileTools: boolean): { native: InlineMediaPart[]; note: string | undefined } {
   if ((turn.parts ?? []).length === 0) return { native: [], note: undefined };
   if (turn.fs === undefined) throw new TypeError("a turn with parts needs its fs: the stored files are named under fs.session");
-  const { native, files } = turnPartsDelivery({ parts: turn.parts, fs: turn.fs }, target, fileTools);
-  return { native, note: frameTurnFiles(files) };
+  const { native, lines } = turnPartsDelivery({ parts: turn.parts, fs: turn.fs }, target, fileTools);
+  return { native, note: frameTurnFiles(lines) };
 }
 
 /** One Anthropic Messages content block of a user turn: an image, or text. */
@@ -83,7 +83,7 @@ export interface OpenAiTurnOptions extends PartsOptions {
   chatCompletions?: boolean;
 }
 
-function openaiNative(part: InvokePart): OpenAiUserPart {
+function openaiNative(part: InlineMediaPart): OpenAiUserPart {
   const { mediaType, data } = part.source;
   if (part.type === "audio") return { type: "audio", audio: data, format: /wav/i.test(mediaType) ? "wav" : "mp3" };
   const filename = part.type === "file" ? part.filename : part.title;
