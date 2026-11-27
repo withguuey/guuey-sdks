@@ -11,6 +11,9 @@
     "LICENSE",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
