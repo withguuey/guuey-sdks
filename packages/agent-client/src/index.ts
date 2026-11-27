@@ -90,6 +90,10 @@ export {
   type Accepts,
   type InputKind,
 } from "./input-kinds.js";
+// The ack gate: the one rule the hook asks of a turn's session frame (did the
+// runtime accept everything sent?), exported so a runtime's test runs it on its
+// real frame.
+export { partsAcknowledged, type TurnAccepted, type TurnSent } from "./parts-ack.js";
 // A turn's parts (`SendOptions.parts`): the four kinds, the caps (a mirror of
 // the runtime's), the one judge `send` runs, and shape 1's images-only form,
 // for a host that checks a pick before sending. The suggested media types are

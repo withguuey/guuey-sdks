@@ -29,6 +29,7 @@ import { A2UI_GUUEY_CATALOG_ID, JSON_RENDER_CATALOG_ID } from "./catalogs.js";
 import { invokeTurn, toInvokeUrl, type InvokeTurnEvent } from "./invoke-turn.js";
 import { buildInvokeBody, type InvokeBody } from "./invoke-body.js";
 import { buildInvokeBodyV2, isRequestShapeRefusal, type InvokeBodyV2 } from "./invoke-body-v2.js";
+import { countPartKinds, partsAcknowledged } from "./parts-ack.js";
 import { AgentResponseError } from "./errors.js";
 import { withActivityObserver } from "./transport.js";
 import { CLIENT_ERROR_CODES } from "./error-codes.js";
@@ -38,7 +39,6 @@ import type { TurnAttachment } from "./attachments.js";
 import {
   describeUserPartRefusal,
   shape1FormOf,
-  USER_PART_KINDS,
   validateUserParts,
   type UserPart,
   type UserPartKind,
@@ -1186,20 +1186,13 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
         // The shape this turn's body actually went in: the W1 fallback moves it to 1.
         let sentShape: RequestShape = shape;
 
-        /**
-         * The ack gate: a runtime that predates a part kind parses it and
-         * ignores it, and would answer the words alone. Shape 1 keeps the
-         * image rule (every image acknowledged in `accepts.attachments`);
-         * shape 2 needs `accepts.parts[kind]` to equal the count sent, for
-         * every kind sent. Without it the turn is cut before any reply.
-         */
-        const partsAcknowledged = (ev: Extract<InvokeTurnEvent, { kind: "session" }>): boolean => {
-          if (sentShape === 1) return attachments.length === 0 || ev.attachmentsAccepted === attachments.length;
-          return USER_PART_KINDS.every((kind) => {
-            const sent = parts.filter((part) => part.type === kind).length;
-            return sent === 0 || ev.partsAccepted?.[kind] === sent;
-          });
-        };
+        // The ack gate (`partsAcknowledged`, `./parts-ack`: the one rule, which a runtime's test runs too), asked in
+        // the shape this turn's body actually went in. Without it the turn is cut before any reply.
+        const turnAcknowledged = (ev: Extract<InvokeTurnEvent, { kind: "session" }>): boolean =>
+          partsAcknowledged(
+            { attachments: ev.attachmentsAccepted, parts: ev.partsAccepted },
+            sentShape === 1 ? { shape: 1, images: attachments.length } : { shape: 2, parts: countPartKinds(parts) },
+          );
 
         // The wire walk lives in `invokeTurn` (the pure per-turn generator —
         // its docblock owns the switch semantics); this hook only maps each
@@ -1230,7 +1223,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
                 void adapters.storage.save(threadStorageKey(appId), ev.threadId);
               }
               // Cutting the stream here also stops the run on the runtime side.
-              if (!partsAcknowledged(ev)) {
+              if (!turnAcknowledged(ev)) {
                 endTurnWith(() => {
                   setError(
                     sentShape === 1
