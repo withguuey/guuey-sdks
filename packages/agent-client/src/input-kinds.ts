@@ -52,6 +52,11 @@ export interface Accepts {
   partKinds: readonly UserPartKind[];
   /** How many of THIS turn's parts of each kind it accepted (the generalized per-kind ack), whole counts only. */
   parts?: { readonly [kind in UserPartKind]?: number };
+  /**
+   * Whether THIS turn's context reached the agent: `delivered` or `ignored`. A Router sends it only on a turn that
+   * carried a non-empty `turnContext`; absent on every older Router, which reads as not delivered.
+   */
+  turnContext?: "delivered" | "ignored";
 }
 
 function wholeCount(v: unknown): number | undefined {
@@ -86,6 +91,8 @@ export function readAccepts(frame: unknown): Accepts {
   }
   const attachments = wholeCount(member(accepts, "attachments"));
   const requestShape = wholeCount(member(accepts, "requestShape"));
+  const rawTurnContext = member(accepts, "turnContext");
+  const turnContext = rawTurnContext === "delivered" || rawTurnContext === "ignored" ? rawTurnContext : undefined;
   const rawParts = member(accepts, "parts");
   let parts: { [kind in UserPartKind]?: number } | undefined;
   if (typeof rawParts === "object" && rawParts !== null && !Array.isArray(rawParts)) {
@@ -101,6 +108,7 @@ export function readAccepts(frame: unknown): Accepts {
     ...(attachments !== undefined ? { attachments } : {}),
     ...(requestShape !== undefined ? { requestShape } : {}),
     ...(parts !== undefined ? { parts } : {}),
+    ...(turnContext !== undefined ? { turnContext } : {}),
   };
 }
 

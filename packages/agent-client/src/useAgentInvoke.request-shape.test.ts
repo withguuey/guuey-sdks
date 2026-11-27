@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { useAgentInvoke } from "./useAgentInvoke.js";
 import { AGENT_ERROR_CODES, CLIENT_ERROR_CODES } from "./error-codes.js";
@@ -440,6 +440,35 @@ describe("useAgentInvoke — parts in shape 2: the runtime's acknowledgement is 
     expect(result.current.messages).toEqual([]);
     expect(result.current.errorCode).toBe(CLIENT_ERROR_CODES.TURN_CONTEXT_INVALID);
     expect(result.current.error).toMatch(/32 blocks/);
+    unmount();
+  });
+
+  it.each([
+    ["delivered", { turnContext: "delivered" }, true, 0],
+    ["ignored by the worker", { turnContext: "ignored" }, false, 1],
+    ["said nothing (an older Router)", {}, false, 1],
+  ] as const)("a Router that %s: turnContextDelivered reads its word, the turn goes on, and a miss warns once", async (_label, accepts, delivered, warns) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { adapters, bodies } = podAdapters([{ session: { threadId: "t-1", accepts } }]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("which plan?", { turnContext: [{ type: "text", text: "Pro plan." }] });
+    });
+    expect(bodies).toHaveLength(1);
+    expect(result.current.turnContextDelivered).toBe(delivered);
+    expect(result.current.errorCode).toBeNull();
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes("turnContext"))).toHaveLength(warns);
+    warn.mockRestore();
+    unmount();
+  });
+
+  it("a turn without context reads null, whatever the Router says", async () => {
+    const { adapters } = podAdapters([{ session: { threadId: "t-1", accepts: { turnContext: "delivered" } } }]);
+    const { result, unmount } = hook(adapters);
+    await act(async () => {
+      await result.current.send("hello");
+    });
+    expect(result.current.turnContextDelivered).toBeNull();
     unmount();
   });
 

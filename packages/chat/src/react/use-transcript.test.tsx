@@ -385,6 +385,7 @@ function invokeReturn(over: Partial<UseAgentInvokeReturn> = {}): UseAgentInvokeR
     activeTool: null,
     error: null,
     errorCode: null,
+    turnContextDelivered: null,
     threadClosed: null,
     threadId: "t1",
     abort: vi.fn(),

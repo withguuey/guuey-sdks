@@ -590,6 +590,12 @@ export interface UseAgentInvokeReturn {
    */
   errorCode: string | null;
   /**
+   * Whether the last turn's `turnContext` reached the agent: `true` when its Router acknowledged it as delivered,
+   * `false` when it said ignored or said nothing (every older Router says nothing), and `null` when the turn carried no
+   * context. The send never fails over it; on `false` the hook also logs one console warning.
+   */
+  turnContextDelivered: boolean | null;
+  /**
    * The agent ended this conversation ({@link ThreadClosed}), or null while
    * it is open. Set by the closing turn (its `event: error`, which also sets
    * {@link error} to the agent's message and {@link errorCode} to the

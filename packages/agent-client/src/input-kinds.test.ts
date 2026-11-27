@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INPUT_KINDS, isInputKind, isInputKindRefusal, readAcceptedInputKinds, userInputKindOf } from "./input-kinds.js";
+import { INPUT_KINDS, isInputKind, isInputKindRefusal, readAccepts, readAcceptedInputKinds, userInputKindOf } from "./input-kinds.js";
 
 describe("input kinds (guuey#2549)", () => {
   it("knows exactly the context-only kind", () => {
@@ -35,5 +35,19 @@ describe("input kinds (guuey#2549)", () => {
     for (const raw of ["photo-only", "", null, undefined, 7, ["context-only"]]) {
       expect(userInputKindOf("user", raw)).toBeUndefined();
     }
+  });
+});
+
+describe("readAccepts: the turn-context delivery word", () => {
+  it("reads delivered and ignored, and nothing else", () => {
+    expect(readAccepts({ accepts: { turnContext: "delivered" } }).turnContext).toBe("delivered");
+    expect(readAccepts({ accepts: { turnContext: "ignored" } }).turnContext).toBe("ignored");
+    for (const raw of ["DELIVERED", true, 1, null, {}]) {
+      expect(readAccepts({ accepts: { turnContext: raw } })).not.toHaveProperty("turnContext");
+    }
+  });
+
+  it("an older Router's frame carries none, and nothing else it reads changes", () => {
+    expect(readAccepts({ accepts: { inputKinds: [], attachments: 1 } })).toEqual({ inputKinds: [], partKinds: [], attachments: 1 });
   });
 });

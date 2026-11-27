@@ -440,6 +440,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
   // carried one (see the return-type contract). Moves in lockstep with
   // `error` — every set/clear of one touches the other.
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [turnContextDelivered, setTurnContextDelivered] = useState<boolean | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   // The agent ended this conversation (see the return-type contract). The ref
   // mirrors it for `send`, which must not depend on it (stable identity).
@@ -705,6 +706,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     setMessages([]);
     setError(null);
     setErrorCode(null);
+    setTurnContextDelivered(null);
     setStatus("ready");
     setActiveTool(null);
     // Re-create the reducer for the new conversation (rebuilt lazily on the
@@ -823,6 +825,10 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
       }
       setError(null);
       setErrorCode(null);
+      // Not delivered until this turn's Router says so: a turn that ends before its session frame, or meets an older
+      // Router that says nothing, reads false. A turn without context reads null.
+      const contextSent = turnContextCandidate !== undefined && turnContextCandidate.length > 0;
+      setTurnContextDelivered(contextSent ? false : null);
       setAborted(false);
       setAdopted(false);
       setStatus("connecting");
@@ -1208,6 +1214,16 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
               setStatus("thinking");
               setAcceptedInputKinds(ev.acceptedInputKinds);
               setAcceptedPartKinds(ev.partKinds);
+              if (contextSent) {
+                const delivered = ev.turnContextDelivery === "delivered";
+                setTurnContextDelivered(delivered);
+                // The send never fails over it (an older Router says nothing at all); the developer hears it once.
+                if (!delivered) {
+                  console.warn(
+                    "useAgentInvoke: this turn's turnContext was not delivered to the agent (its Router ignored it or predates turn context). The turn went on without it.",
+                  );
+                }
+              }
               if (ev.threadId) {
                 threadIdRef.current = ev.threadId;
                 setThreadId(ev.threadId);
@@ -1383,6 +1399,7 @@ export function useAgentInvoke(opts: UseAgentInvokeOptions): UseAgentInvokeRetur
     activeTool,
     error,
     errorCode,
+    turnContextDelivered,
     threadClosed,
     threadId,
     abort,

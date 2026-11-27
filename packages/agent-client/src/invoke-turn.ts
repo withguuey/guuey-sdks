@@ -74,6 +74,11 @@ export type InvokeTurnEvent =
        */
       partKinds: readonly UserPartKind[];
       /**
+       * Whether THIS turn's context reached the agent, from `accepts.turnContext`: `delivered` or `ignored`. Absent
+       * on a turn without context, and on every older Router (read it as not delivered).
+       */
+      turnContextDelivery?: "delivered" | "ignored";
+      /**
        * How many of THIS turn's parts of each kind the runtime accepted, from
        * `accepts.parts`. Absent when the runtime sent no counts.
        */
@@ -165,6 +170,7 @@ export async function* invokeTurn(
           ...(accepts.requestShape !== undefined ? { requestShape: accepts.requestShape } : {}),
           partKinds: accepts.partKinds,
           ...(accepts.parts !== undefined ? { partsAccepted: accepts.parts } : {}),
+          ...(accepts.turnContext !== undefined ? { turnContextDelivery: accepts.turnContext } : {}),
         };
       } else if (ev.event === "message") {
         // Status derivation (guuey#91) — read the frame's `type` before the
